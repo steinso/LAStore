@@ -1,0 +1,20 @@
+{
+  "name": "LAStore-service",
+  "version": "0.1.0",
+  "description": "Learning Analytics Persistent Storage",
+  "author": "Stein Sorhus <stein.sorhus@gmail.com>",
+  "scripts": {
+    "test": "mocha",
+    "start": "node LAStoreServer.js"
+  },
+  "dependencies": {
+    "express": "*",
+    "gulp": "*",
+    "gulp-babel": "*"
+  },
+  "devDependencies": {
+    "babel": "^4.6.1",
+    "mocha": "*",
+    "neo4j": "^2.0.0-alpha4"
+  }
+}
