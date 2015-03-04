@@ -9,73 +9,7 @@
  * Marker: {Type:"error",}
  */
 var neo4j= require("neo4j");
-
-var CypherMergeQuery = function(){
-	var nodes = [];
-	var relationShips = [];
-	var refCount = 0;
-	var paramCount = 0;
-	var allParams = {};
-
-	function addNode(node,params){
-		var nodeRef = "n"+refCount++;
-		nodes.push({node: node,ref: nodeRef,params: params});
-		return nodeRef;
-	}
-
-	function addRelation(fromRef,type,toRef){
-		relationShips.push({from: fromRef,type: type,to: toRef});
-	}
-
-	function getQuery(){
-
-		var nodeQ = _getNodeQuery();
-		var relationQ = _getRelationQuery();
-
-		var query = nodeQ+" "+relationQ;
-
-		return {
-			query: query,
-			params: allParams
-		};
-	}
-
-	function _getNodeQuery(){
-		var nodeQ = nodes.map(function(node){
-			var params = _genParams(node.params);
-			return "MERGE ("+node.ref+":"+node.node+" {"+params+"})";
-		});
-		return nodeQ.join(" ");
-	}
-
-	function _getRelationQuery(){
-
-		var relationQ = relationShips.map(function(relation){
-			return "MERGE ("+relation.from+") -[:"+relation.type+"]-> ("+relation.to+") ";
-		});
-
-		return relationQ.join(" ");
-	}
-
-	function _genParams(params){
-
-		var paramNames = Object.keys(params);
-
-		var queries = paramNames.map(function(param){
-			var pid = "p"+paramCount++;
-			allParams[pid] = params[param];
-			return param+": {"+pid+"}";
-		});
-
-		return queries.join(",");
-	}
-
-	return {
-		getQuery: getQuery,
-		addNode: addNode,
-		addRelation: addRelation
-	};
-};
+var CypherMergeQuery = require("./CypherMergeQuery.js");
 
 var db = new neo4j.GraphDatabase("http://localhost:7474");
 
@@ -138,8 +72,20 @@ var DBNeo4jAdapter = function(){
 	}
 
 
-	function getFileStates(user,path){
+	function getFileStates(clientId,filepath){
+		return new Promise(function(resolve,reject){
 
+			var params = {clientId: clientId};
+			var query = "MATCH (:User {clientId:{clientId}}) -[:HAS_REPO]-> (:Repo) -[:HAS_File]->(:File {path:filepath})-[:HAS_FILE_STATE]->(s:FileState)-[:HAS_FILE_STATE]-(r:RepoState) RETURN s, r.time";
+
+			db.cypher({query: query, params: params},function(error,result){
+				if(error !== null){
+					reject(error);
+				}else{
+					resolve(result);
+				}
+			});
+		});
 	}
 
 	function getFiles(user){
@@ -167,27 +113,36 @@ var DBNeo4jAdapter = function(){
 		return query;
 	}
 
+	var __forTesting ={
+		get db () {return db;},
+		set db (url) {
+			db = new neo4j.GraphDatabase(url);
+		},
+	};
 
 	return {
 		addState: addState,
 		addStates: addStates,
 		getFileStates: getFileStates,
-		addCategory: addCategory
+		addCategory: addCategory,
+		__forTesting:__forTesting
 	};
 };
 
-var ad = new DBNeo4jAdapter();
 
 //var c = ad.addCategory("Oving1",[{name:"test1"},{name:"test2"}]);
-
+/*
 var request = require("request");
 
 function requestRepoStates(repo,callBack){
 
-request("http://192.168.1.158:50809/timeLapse/"+repo, function (error, response, body) {
-	if (!error && response.statusCode === 200) {
-		var info = JSON.parse(body);
-		console.log(ad.addStates("stein",info,callBack));
-	}
-});
+	request("http://192.168.1.158:50809/timeLapse/"+repo, function (error, response, body) {
+		if (!error && response.statusCode === 200) {
+			var info = JSON.parse(body);
+			console.log(ad.addStates("stein",info,callBack));
+		}
+	});
 }
+*/
+
+module.exports = DBNeo4jAdapter;
