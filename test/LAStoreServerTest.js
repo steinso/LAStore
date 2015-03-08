@@ -86,7 +86,7 @@ describe("LAStoreServer", function () {
 					db.get("SELECT userId,name FROM user WHERE userId= $id",{$id:id},function(error,rows){
 
 						if(rows === undefined || rows.userId=== undefined || rows.userId.length === 0){
-							reject("ERROR: No user row found: "+rows.length+" "+rows.toString);
+							reject("ERROR: No user row found: "+rows+" "+rows.toString);
 						}else{
 							resolve(id);
 						}
@@ -119,12 +119,12 @@ describe("LAStoreServer", function () {
 				db.get("SELECT userId,name FROM user WHERE userId= $id",{$id:id},function(error,rows){
 
 					if(rows === undefined || rows.userId=== undefined || rows.name.length === 0 || rows.name !== "test"){
-						done("ERROR: Name not set: "+rows.length+" "+rows.toString);
+						done("ERROR: Name not set: "+rows+" "+rows.toString);
 					}else{
 						done();
 					}
 			});
-			});
+			},function(error){done(error);});
 		},function(error){done(error);})
 	});
 
@@ -145,7 +145,7 @@ describe("LAStoreServer", function () {
 						done();
 					}
 			});
-			});
+			},function(error){done(error);});
 		},function(error){done(error);})
 	});
 
