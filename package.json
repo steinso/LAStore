@@ -16,8 +16,13 @@
     "body-parser": "^1.12.0",
     "es6-promise": "^2.0.1",
     "express": "^4.12.2",
+    "minimist": "^1.1.0",
     "mocha": "*",
     "neo4j": "^2.0.0-alpha4",
+    "request": "^2.53.0",
+    "require": "^2.4.17",
+    "rimraf": "^2.3.1",
+    "should": "^5.1.0",
     "sqlite3": "^3.0.5"
   }
 }

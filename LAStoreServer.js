@@ -13,11 +13,16 @@ var FileOrganizer= require('./FileOrganizer.js');
 FileOrganizer = FileOrganizer();
 var db = new DatabaseHandler('dbFile.db');
 var Log = require("./Logger.js");
+var argv = require('minimist')(process.argv.slice(2));
+
+var PORT = argv.p || argv.port || "50812";
 
 app.use(bodyParser.json({limit:"1mb"}));
 
 app.post("/client",function(req,res){
 	var clientId = User.create();	
+	var log = new Log("Create client "+clientId);
+	log.print();
 	db.insertUser(clientId);
 	res.send(clientId);
 });
@@ -191,7 +196,6 @@ app.get("/fileMetadata", function(req, res){
 });
 
 
-var port = 50812;
-app.listen(port, function(){
-	console.log("LAStore server listening on port "+port);
+app.listen(PORT, function(){
+	console.log("LAStore server listening on port "+PORT);
 });
