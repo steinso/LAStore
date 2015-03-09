@@ -49,6 +49,8 @@ var DatabaseHandler = function(databaseFile){
 	};
 
 	var setClientName = function(clientId,name){
+		return new Promise(function(resolve, reject){
+		
 
 		var values = {
 			$clientId:clientId,
@@ -57,18 +59,33 @@ var DatabaseHandler = function(databaseFile){
 
 		console.log("Setting client name for user:",clientId);
 		var stmt = db.run("UPDATE user SET name = $name  WHERE userId= $clientId;",values,function(error){
-			console.log("DB ERROR: "+error);
+			if(error == null){
+				resolve()
+			}else{
+				reject(error);
+			}
 			});
+		})
 	};
 	
 	var setClientParticipating= function(clientId,participating){
+		return new Promise(function(resolve, reject){
+		
 
 		var values = {
 			$clientId:clientId,
 			$participating:participating
 		};
 
-		var stmt = db.run("UPDATE user SET participating = $participating WHERE userId= $clientId;",values);
+		var stmt = db.run("UPDATE user SET participating = $participating WHERE userId= $clientId;",values,function(error){
+			if(error == null){
+				resolve()
+			}else{
+				reject(error);
+			}
+			});
+
+		})
 	};
 
 

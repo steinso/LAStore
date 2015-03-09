@@ -9,6 +9,7 @@ var rimraf = require("rimraf");
 var port = 44988;
 var serverNode;
 
+var db = new sqlite3.Database("/srv/LAStore/dbFile.db");
 
 function sendRequest(method,url,body){
 	return new Promise(function(resolve,reject){
@@ -86,7 +87,7 @@ describe("LAStoreServer", function () {
 					db.get("SELECT userId,name FROM user WHERE userId= $id",{$id:id},function(error,rows){
 
 						if(rows === undefined || rows.userId=== undefined || rows.userId.length === 0){
-							reject("ERROR: No user row found: "+rows+" "+rows.toString);
+							reject("ERROR: No user row found: "+rows);
 						}else{
 							resolve(id);
 						}
@@ -102,14 +103,12 @@ describe("LAStoreServer", function () {
 	}
 
 	it("should be able to create a client", function (done) {
-		var db = new sqlite3.Database("/srv/LAStore/dbFile.db");
 		var id;
 		after(function(done){cleanUpUser(db,id).then(function(result){done();});})
 		createUser(db).then(function(_id){id = _id;done()},function(error){done(error);})
 	});
 
 	it("should be able to set client name", function (done) {
-		var db = new sqlite3.Database("/srv/LAStore/dbFile.db");
 		var id;
 		after(function(done){cleanUpUser(db,id).then(function(result){done();});})
 		createUser(db).then(function(_id){
@@ -118,11 +117,16 @@ describe("LAStoreServer", function () {
 				//Check DB populated
 				db.get("SELECT userId,name FROM user WHERE userId= $id",{$id:id},function(error,rows){
 
-					if(rows === undefined || rows.userId=== undefined || rows.name.length === 0 || rows.name !== "test"){
-						done("ERROR: Name not set: "+rows+" "+rows.toString);
+					try{
+					if(rows === undefined || rows.userId=== undefined || rows.name === undefined || rows.name.length === 0 || rows.name !== "test"){
+						done("ERROR: Name not set: "+rows);
 					}else{
 						done();
 					}
+					}catch(e){
+						done(e);
+					}	
+
 			});
 			},function(error){done(error);});
 		},function(error){done(error);})
@@ -130,7 +134,6 @@ describe("LAStoreServer", function () {
 
 
 	it("should be able to set client participating", function (done) {
-		var db = new sqlite3.Database("/srv/LAStore/dbFile.db");
 		var id;
 		after(function(done){cleanUpUser(db,id).then(function(result){done();});})
 		createUser(db).then(function(_id){
@@ -139,8 +142,8 @@ describe("LAStoreServer", function () {
 				//Check DB populated
 				db.get("SELECT userId,name,participating FROM user WHERE userId= $id",{$id:id},function(error,rows){
 
-					if(rows === undefined || rows.userId=== undefined || rows.participating.length === 0 || rows.participating!== "true"){
-						done("ERROR: Name not set: "+rows.length+" "+rows.toString);
+					if(rows === undefined || rows.userId=== undefined || rows.participating === undefined || rows.participating.length === 0 || rows.participating!== "true"){
+						done("ERROR: Name not set: "+rows);
 					}else{
 						done();
 					}

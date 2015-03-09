@@ -38,19 +38,28 @@ app.post("/client/name",function(req,res){
 
 	var validName = (name.match(allowedNamePattern) !== null
 				&& name.match(allowedNamePattern).length > 0);
+	
+	function onSuccess (){
+		var reply = {'status': 'OK', 'fulfilled': validName};
+		res.send(JSON.stringify(reply));
+		log.print();
+	}
+
+	function onError (error){
+		var reply = {'status': 'OK', 'error': error};
+		res.send(JSON.stringify(reply));
+		log.print();
+	}
 
 	if(validName){
 		log.debug("Name valid, setting in DB");
-		db.setClientName(clientId,name);
+		db.setClientName(clientId,name).then(onSuccess,onError);
 	}else{
 		//Set empty if name is illegal
 		log.debug("Name invalid, setting 0");
-		db.setClientName(clientId,"");
+		db.setClientName(clientId,"").then(onSuccess,onError);
 	}
 
-	var reply = {'status': 'OK', 'fulfilled': validName};
-	res.send(JSON.stringify(reply));
-	log.print();
 });
 
 var setClientParticipatingRequest = {
@@ -72,14 +81,26 @@ app.post("/client/participating",function(req,res){
 	var hasBeenSet = false;
 
 	if(value === "false" || value === "true" || value === false || value === true)	{
-		db.setClientParticipating(clientId,value);
-		hasBeenSet = true;
-	}
-	log.debug("Paricipating set: "+hasBeenSet);
+		db.setClientParticipating(clientId,value).then(function(){
 
-	var response = {status: "OK"};
-	res.send(JSON.stringify(response));
-	log.print();
+			hasBeenSet = true;
+			log.debug("Paricipating set: "+hasBeenSet);
+
+			var response = {status: "OK"};
+			res.send(JSON.stringify(response));
+			log.print();
+
+		},function(error){
+			var response = {status: "OK",error:error};
+			res.send(JSON.stringify(response));
+			log.print();
+		});
+	}else{
+		var response = {status: "OK"};
+		res.send(JSON.stringify(response));
+		log.print();
+	}
+
 });
 
 app.get("/client/participating",function(req,res){
