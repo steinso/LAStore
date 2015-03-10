@@ -108,14 +108,32 @@ app.get("/client/participating",function(req,res){
 })
 
 app.get("/client/:nickname",function(req,res){
+	
+
 	var nickname = req.params.nickname;
+	var log = new Log("Unknown","Getting id for nick: "+nickname);
+ 	var allowedNamePattern = /^[A-z0-9_]+$/;
+	var validName = (nickname.match(allowedNamePattern) !== null && nickname.match(allowedNamePattern).length > 0);
+
+	if(!validName){
+		var err = {error: "Invalid name"};
+		res.send(JSON.stringify(err));
+		log.error("Invalid name");
+		log.print()
+		return;
+	}
+
 	db.getIdFromClientName(nickname).then(function(clientId){
 		var response = {id: clientId};
 		res.send(JSON.stringify(response));
+		log.debug("Id found: "+clientId);
+		log.print()
 
 	},function(error){
 		var err = {error: error};
 		res.send(JSON.stringify(err));
+		log.error(error);
+		log.print()
 	});
 });
 

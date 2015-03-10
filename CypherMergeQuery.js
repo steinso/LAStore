@@ -67,3 +67,4 @@ var CypherMergeQuery = function(){
 };
 
 
+module.exports = CypherMergeQuery;
