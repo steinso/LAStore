@@ -22,7 +22,7 @@ var db = new neo4j.GraphDatabase("http://192.168.59.103:7474");
 var DBNeo4jAdapter = function(){
 
 
-	function addStates(userId,states){
+	function addStates(clientId,states){
 		return new Promise(function(resolve, reject){
 
 			var index = 0;
@@ -33,7 +33,7 @@ var DBNeo4jAdapter = function(){
 
 			var iterator = function(){
 				if(index<states.length){
-					addState(userId,states[index++]).then(iterator,onError);
+					addState(clientId,states[index++]).then(iterator,onError);
 				}else{
 					resolve();
 				}
@@ -43,12 +43,12 @@ var DBNeo4jAdapter = function(){
 		})
 	}
 
-	function addState(userId, state,callback){
+	function addState(clientId, state,callback){
 		return new Promise(function(resolve, reject){
 			console.log("ADding state");
 
 			var query = new CypherMergeQuery();
-			var userRef = query.addNode("User",{clientId: "stein"});
+			var userRef = query.addNode("User",{clientId: clientId});
 
 			var repoParams = {
 				commitSha: state.commitSha,
@@ -64,7 +64,7 @@ var DBNeo4jAdapter = function(){
 
 			state.files.forEach(function(file){
 
-				var fileParams = {name: file.name};
+				var fileParams = {name: file.name,contentName:file.contentName,packageName:file.packageName,type:file.type};
 				var fileStateParams = {
 					numberOfMarkers: file.numberOfMarkers,
 					numberOfLines: file.numberOfLines,

@@ -6,7 +6,7 @@ var Promise = require("es6-promise");
 var app = express();
 var MetadataBroker = require("./MetadataBroker.js");
 var validateRequest = require("./RequestValidator.js").validateRequest;
-var User = require('./User.js')();
+var Client = require('./Client.js')();
 
 var DatabaseHandler = require('./DatabaseHandler.js');
 var FileOrganizer= require('./FileOrganizer.js');
@@ -14,51 +14,40 @@ FileOrganizer = FileOrganizer();
 var db = new DatabaseHandler('dbFile.db');
 var Log = require("./Logger.js");
 var argv = require('minimist')(process.argv.slice(2));
+var fs = require("fs");
+var GitBroker = require("./GitBroker.js");
+var AnalysisDb = require("./DBNeo4jAdapter.js");
+var _ = require("lodash");
+var request = require("request");
 
 var PORT = argv.p || argv.port || "50812";
 
 app.use(bodyParser.json({limit:"1mb"}));
 
 app.post("/client",function(req,res){
-	var clientId = User.create();	
+	var clientId = Client.create();	
 	var log = new Log("Create client "+clientId);
 	log.print();
-	db.insertUser(clientId);
 	res.send(clientId);
 });
 
 app.post("/client/name",function(req,res){
-	var allowedNamePattern = /^[A-z0-9_]+$/;
-	console.log("Got",req.body);
-	var info = req.body;
-	var name = info.name;
-	var clientId = info.clientId;
+	var name = req.body.name;
+	var clientId = req.body.clientId;
+	var log = new Log(clientId,"SetName request: "+name);
 
-	var log = new Log("SetName request: "+name,clientId);
+	Client.setName(clientId,name).then(function(name){
 
-	var validName = (name.match(allowedNamePattern) !== null
-				&& name.match(allowedNamePattern).length > 0);
-	
-	function onSuccess (){
-		var reply = {'status': 'OK', 'fulfilled': validName};
-		res.send(JSON.stringify(reply));
-		log.print();
-	}
+		 var reply = {'status': 'OK', 'name': name};
+		 res.send(JSON.stringify(reply));
+		 log.print();
 
-	function onError (error){
-		var reply = {'status': 'OK', 'error': error};
-		res.send(JSON.stringify(reply));
-		log.print();
-	}
+	},function(error){
 
-	if(validName){
-		log.debug("Name valid, setting in DB");
-		db.setClientName(clientId,name).then(onSuccess,onError);
-	}else{
-		//Set empty if name is illegal
-		log.debug("Name invalid, setting 0");
-		db.setClientName(clientId,"").then(onSuccess,onError);
-	}
+		 var reply = {'status': 'OK', 'error': error};
+		 res.send(JSON.stringify(reply));
+		 log.print();
+	})
 
 });
 
@@ -74,45 +63,34 @@ app.post("/client/participating",function(req,res){
 		var err = {error: "Request misformed"};
 		res.send(JSON.stringify(err));
 	}
+
 	var clientId = params.clientId;
 	var value = params.participating;
-
 	var log = new Log(clientId,"Participating: "+value);
-	var hasBeenSet = false;
 
-	if(value === "false" || value === "true" || value === false || value === true)	{
-		db.setClientParticipating(clientId,value).then(function(){
-
-			hasBeenSet = true;
-			log.debug("Paricipating set: "+hasBeenSet);
-
-			var response = {status: "OK"};
-			res.send(JSON.stringify(response));
-			log.print();
-
-		},function(error){
-			var response = {status: "OK",error:error};
-			res.send(JSON.stringify(response));
-			log.print();
-		});
-	}else{
+Client.setParticipating(clientId,value).then(function(){
+		log.debug("Paricipating set to: "+value);
 		var response = {status: "OK"};
 		res.send(JSON.stringify(response));
 		log.print();
-	}
-
+	},function(error){
+		var response = {status: "OK",error:error};
+		log.error("Participating not set: "+error);
+		res.send(JSON.stringify(response));
+		log.print();
+	});
 });
 
 app.get("/client/participating",function(req,res){
-	
+
 })
 
 app.get("/client/:nickname",function(req,res){
-	
+
 
 	var nickname = req.params.nickname;
 	var log = new Log("Unknown","Getting id for nick: "+nickname);
- 	var allowedNamePattern = /^[A-z0-9_]+$/;
+	var allowedNamePattern = /^[A-z0-9_]+$/;
 	var validName = (nickname.match(allowedNamePattern) !== null && nickname.match(allowedNamePattern).length > 0);
 
 	if(!validName){
@@ -137,6 +115,84 @@ app.get("/client/:nickname",function(req,res){
 	});
 });
 
+
+
+app.get("/client", function(req, res){
+
+	var path = "/srv/LAHelper/logs/";
+	var clientList = [];
+	fs.readdir(path, function(err, files){
+
+		if(err){
+			res.send("ERROR: " + err);
+		}
+
+		if(files !== null && files.length > 0){
+			clientList = files.filter(function(file){
+				return fs.statSync(path + file).isDirectory();
+			});
+		}
+
+		res.send(clientList);
+	});
+});
+
+app.post("/notify/repo/:clientId",function(req,res){
+	var clientId = req.params.clientId;
+	//Diff list of commits in GIT to lists of commits in DB
+	console.log("Notification received for:"+clientId)
+	var repoPath = "/srv/LAHelper/logs/"+clientId;
+	GitBroker.getCommitListFromRepo(repoPath).then(function(commitList){
+
+		var analysisDb = new AnalysisDb();
+		analysisDb.getRepoStateList(clientId).then(function(stateList){
+			
+			stateList = stateList.map(function(state){return state.commitSha});
+			var difference = _.difference(commitList,stateList);
+			console.log(difference);
+
+			if(difference.length<1){
+				var response = {status:"OK"}
+				res.send(JSON.stringify(response));
+				return;
+			}
+			GitBroker.getCommitsFromRepo(repoPath,difference).then(function(commits){
+				var body = {commits:commits};
+				request({url:"http://localhost:50811/process",method:"POST",body:body,json:true},function(error,response,body){
+					var analyticCommits = body;
+
+					analysisDb.addStates(clientId,analyticCommits);
+
+					res.send(JSON.stringify(body));
+				});
+				var t = [];
+			},function(error){
+				console.log(error);
+			});
+
+			//res.send("OK");
+
+		},function(error){
+			var response = {status:"OK",error:error};
+			res.send(JSON.stringify(response));
+			console.log("ERROR getting state list from db",error);
+		},function(error){
+			
+			var response = {status:"OK",error:error};
+			res.send(JSON.stringify(response));
+			console.log("ERROR getting state list from db",error);
+		});
+	},function(error){
+		var response = {status:"OK",error:error};
+		res.send(JSON.stringify(response));
+		console.log("ERROR getting commit list from repo",error);
+	});
+	// Then add difference to DB
+
+
+});
+
+
 var setErrorLogRequest= {
 	clientId: "",
 	log: ""
@@ -150,6 +206,8 @@ app.post("/errorLog",function(req,res){
 	}
 
 	db.insertApplicationLog(params.clientId,"error",params.log);
+	var response = {status:"OK"};
+	res.send(JSON.stringify(response));
 });
 
 var setEventLogRequest= {
@@ -191,6 +249,13 @@ app.post("/file", function(req, res){
 
 	log.print();
 	FileOrganizer.store(files,clientId);
+	setTimeout(function(){
+		console.log("Sending notify update");
+		request({url:"http://localhost:"+PORT+"/notify/repo/"+clientId,body:{},json:true,method:"POST"},function(error,body,response){
+			console.log("DB Notification sent")
+
+		})
+	},2000);
 
 	var response = {status:"OK"};
 	res.send(JSON.stringify(response));

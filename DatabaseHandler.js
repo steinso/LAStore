@@ -37,7 +37,7 @@ var DatabaseHandler = function(databaseFile){
 		});
 	};
 
-	var insertUser = function(userId){
+	var insertClient = function(userId){
 
 		var values = {
 			$userId:userId,
@@ -62,7 +62,7 @@ var DatabaseHandler = function(databaseFile){
 			if(error == null){
 				resolve()
 			}else{
-				reject(error);
+				reject("DB: Could not set name: "+name+" -> "+error);
 			}
 			});
 		})
@@ -199,7 +199,7 @@ var DatabaseHandler = function(databaseFile){
 	_constructor();
 
 	var publicApi = {
-		insertUser:insertUser,
+		insertClient:insertClient,
 		insertApplicationLog:insertApplicationLog,
 		setClientName:setClientName,
 		setClientParticipating:setClientParticipating,
