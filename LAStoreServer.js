@@ -19,6 +19,7 @@ var GitBroker = require("./GitBroker.js");
 var AnalysisDb = require("./DBNeo4jAdapter.js");
 var _ = require("lodash");
 var request = require("request");
+var Timer = require("./Timer.js");
 
 var PORT = argv.p || argv.port || "50812";
 
@@ -142,6 +143,8 @@ app.post("/notify/repo/:clientId",function(req,res){
 	//Diff list of commits in GIT to lists of commits in DB
 	console.log("Notification received for:"+clientId)
 	var repoPath = "/srv/LAHelper/logs/"+clientId;
+	var timer = Timer.create("notify");
+	timer.start();
 	GitBroker.getCommitListFromRepo(repoPath).then(function(commitList){
 
 		var analysisDb = new AnalysisDb();
@@ -161,7 +164,11 @@ app.post("/notify/repo/:clientId",function(req,res){
 				request({url:"http://localhost:50811/process",method:"POST",body:body,json:true},function(error,response,body){
 					var analyticCommits = body;
 
-					analysisDb.addStates(clientId,analyticCommits);
+					analysisDb.addStates(clientId,analyticCommits).then(function(result){
+
+						timer.stop();
+						console.log("Time spent: ", timer.getLast());
+					});
 
 					res.send(JSON.stringify(body));
 				});

@@ -6,10 +6,20 @@ var CypherMergeQuery = function(){
 	var paramCount = 0;
 	var allParams = {};
 
+	function createNode(node,params){
+		var nodeRef = "n"+refCount++;
+		nodes.push({node: node,ref: nodeRef,params: params,type:"CREATE"});
+		return nodeRef;
+	}
+
 	function addNode(node,params){
 		var nodeRef = "n"+refCount++;
-		nodes.push({node: node,ref: nodeRef,params: params});
+		nodes.push({node: node,ref: nodeRef,params: params,type:"MERGE"});
 		return nodeRef;
+	}
+
+	function getReference(){
+		return "r"+refCount++;
 	}
 
 	function addRelation(fromRef,type,toRef){
@@ -32,7 +42,7 @@ var CypherMergeQuery = function(){
 	function _getNodeQuery(){
 		var nodeQ = nodes.map(function(node){
 			var params = _genParams(node.params);
-			return "MERGE ("+node.ref+":"+node.node+" {"+params+"})";
+			return node.type+" ("+node.ref+":"+node.node+" {"+params+"})";
 		});
 		return nodeQ.join(" ");
 	}

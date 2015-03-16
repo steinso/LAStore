@@ -25,22 +25,27 @@ var DBNeo4jAdapter = function(){
 	function addStates(clientId,states){
 		return new Promise(function(resolve, reject){
 
-			var index = 0;
-			var onError = function(error){
-				console.log("Error adding states: ",error);
-				iterator();
-			}
+			_createUserIfNotExist(clientId).then(function(){
 
-			var iterator = function(){
-				if(index<states.length){
-					addState(clientId,states[index++]).then(iterator,onError);
-				}else{
-					resolve();
+				var index = 0;
+				var onError = function(error){
+					console.log("Error adding states: ",error);
+					iterator();
 				}
 
-			};
-			iterator();
-		})
+				var iterator = function(){
+					if(index<states.length){
+						addState(clientId,states[index++]).then(iterator,onError);
+					}else{
+						resolve();
+					}
+
+				};
+				iterator();
+			},function(error){
+				console.log("Could not create user: "+error)
+			})
+		});
 	}
 
 	function addState(clientId, state,callback){
@@ -50,51 +55,98 @@ var DBNeo4jAdapter = function(){
 			var query = new CypherMergeQuery();
 			var userRef = query.addNode("User",{clientId: clientId});
 
-			var repoParams = {
+			var repoStateParams = {
 				commitSha: state.commitSha,
 				commitMsg: state.commitMsg,
 				time: state.time
+
 			};
+			var queryParams = {
+				clientId:clientId, 
+				commitSha: state.commitSha,
+				commitMsg: state.commitMsg,
+				time: state.time
+			}
+			var query2 = "MERGE (u:User {clientId:{clientId}}) -[:HAS_REPO]-> (r:Repo) ";
+			query2 += "MERGE (r) -[:HAS_REPO_STATE]-> (rs:RepoState {commitSha:{commitSha},commitMsg:{commitMsg},time:{time}})"
 
-			var stateRef = query.addNode("RepoState",repoParams);
-			var repoRef = query.addNode("Repo",{});
+			state.files.forEach(function(file, index){
 
-			query.addRelation(userRef,"HAS_REPO",repoRef);
-			query.addRelation(repoRef,"HAS_REPO_STATE",stateRef);
+				var fileId = "f"+index;
+				var stateId = "fs"+index;	
+				queryParams[fileId+"name"] = file.name;
+				queryParams[fileId+"contentName"] = file.contentName;
+				queryParams[fileId+"packageName"] = file.packageName;
+				queryParams[fileId+"type"] = file.type;
 
-			state.files.forEach(function(file){
+				queryParams[stateId+"numberOfMarkers"] =  file.numberOfMarkers;
+				queryParams[stateId+"numberOfLines"] =  file.numberOfLines;
+				queryParams[stateId+"numberOfFailedTests"] =  file.numberOfFailedTests
+				queryParams[stateId+"time"] = state.time; 
 
-				var fileParams = {name: file.name,contentName:file.contentName,packageName:file.packageName,type:file.type};
-				var fileStateParams = {
-					numberOfMarkers: file.numberOfMarkers,
-					numberOfLines: file.numberOfLines,
-					numberOfFailedTests: file.numberOfFailedTests
-				};
+				query2 += " MERGE (r)-[:HAS_FILE]-> ("+fileId+":File {name:{"+fileId+"name},contentName:{"+fileId+"contentName},packageName:{"+fileId+"packageName},type:{"+fileId+"type}})";
 
-				var fileRef = query.addNode("File", fileParams);
-				var fileStateRef = query.addNode("FileState",fileStateParams);
-
-				query.addRelation(repoRef,"HAS_FILE",fileRef);
-				query.addRelation(stateRef,"HAS_FILE_STATE",fileStateRef);
-				query.addRelation(fileRef,"HAS_FILE_STATE",fileStateRef);
+				query2 += " MERGE ("+fileId+")-[:HAS_FILE_STATE]-> ("+stateId+":FileState {numberOfMarkers:{"+stateId+"numberOfMarkers},numberOfLines:{"+stateId+"numberOfLines},numberOfFailedTests:{"+stateId+"numberOfFailedTests},time:{"+stateId+"time}})"
+				query2 += " MERGE (rs)-[:HAS_FILE_STATE]-> ("+stateId+")"
 			});
 
 			var queryObj = query.getQuery();
-			console.log(queryObj.query);
+			console.log(query2);
 
-			db.cypher({query: queryObj.query, params: queryObj.params},function(error,result){
+			db.cypher({query: query2, params: queryParams},function(error,result){
 				console.log("Query performed",error,result);
 				if(error !== null){
 					reject(error);
+
 				}else{
 					resolve(result);
 				}
 			});
+
 			// Not needed, just used for testing atm to validate queries
 			//return queryObj.query;
 		})
 	}
 
+	function _createUserIfNotExist(clientId){
+		return new Promise(function(resolve, reject){
+		
+		
+		var query = "MATCH (u:User {clientId:{clientId}}) -[:HAS_REPO]-> (r:Repo) RETURN u,r";
+		db.cypher({query: query, params:{clientId:clientId}},function(error,result){
+
+			if(error !== null){
+				reject(error);
+					console.log("User error",error);
+				return;
+			}
+			if(result.length<1){
+				_createUser(clientId).then(function(){
+					resolve();
+				},function(error){reject(error)});
+			}else{
+				resolve();
+				console.log("User exists");
+			}
+		})
+		})
+	}
+
+	function _createUser(clientId){
+		return new Promise(function(resolve, reject){
+			var query = "CREATE (u:User {clientId:{clientId}}) CREATE (r:Repo) CREATE (u)-[:HAS_REPO]->(r)";
+
+			db.cypher({query: query, params:{clientId:clientId}},function(error,result){
+
+			if(error !== null){
+				reject(error);
+				return;
+			}
+			resolve();
+		})
+		})
+		
+		}
 
 	function getFileStates(clientId,filepath){
 		return new Promise(function(resolve,reject){
@@ -146,7 +198,7 @@ var DBNeo4jAdapter = function(){
 				if(error !== null){
 					reject(error);
 				}else{
-					
+
 					resolve(_convertRepoStates(result));
 				}
 			});
