@@ -306,6 +306,18 @@ app.get("/fileMetadata", function(req, res){
 
 });
 
+app.get("/repoStates/:clientId", function(req, res){
+	var clientId = req.params.clientId;
+	var timer = Timer.create("RepoStates");
+	timer.start();
+	var analysisDb = new AnalysisDb();
+	analysisDb.getRepoStates(clientId).then(function(stateList){
+		timer.stop();
+		console.log("Got states after: "+timer.getLast()+" ms");
+		res.send(stateList);
+});
+});
+
 
 app.listen(PORT, function(){
 	console.log("LAStore server listening on port "+PORT);

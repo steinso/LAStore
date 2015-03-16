@@ -12,6 +12,7 @@ var neo4j= require("neo4j");
 var CypherMergeQuery = require("./CypherMergeQuery.js");
 var Promise = require("es6-promise").Promise;
 var db = new neo4j.GraphDatabase("http://192.168.59.103:7474");
+var _ = require("lodash");
 
 
 /**
@@ -74,20 +75,35 @@ var DBNeo4jAdapter = function(){
 
 				var fileId = "f"+index;
 				var stateId = "fs"+index;	
-				queryParams[fileId+"name"] = file.name;
-				queryParams[fileId+"contentName"] = file.contentName;
-				queryParams[fileId+"packageName"] = file.packageName;
-				queryParams[fileId+"type"] = file.type;
+				var fileParams = {
+					name: file.name,
+					contentName: file.contentName,
+					packageName: file.packageName,
+					type: file.type
+				}
 
-				queryParams[stateId+"numberOfMarkers"] =  file.numberOfMarkers;
-				queryParams[stateId+"numberOfLines"] =  file.numberOfLines;
-				queryParams[stateId+"numberOfFailedTests"] =  file.numberOfFailedTests
-				queryParams[stateId+"time"] = state.time; 
+				var stateParams = {
+					numberOfMarkers:  file.numberOfMarkers,
+					numberOfLines:  file.numberOfLines,
+					numberOfFailedTests:  file.numberOfFailedTests,
+					time: state.time
+				}
 
-				query2 += " MERGE (r)-[:HAS_FILE]-> ("+fileId+":File {name:{"+fileId+"name},contentName:{"+fileId+"contentName},packageName:{"+fileId+"packageName},type:{"+fileId+"type}})";
-
-				query2 += " MERGE ("+fileId+")-[:HAS_FILE_STATE]-> ("+stateId+":FileState {numberOfMarkers:{"+stateId+"numberOfMarkers},numberOfLines:{"+stateId+"numberOfLines},numberOfFailedTests:{"+stateId+"numberOfFailedTests},time:{"+stateId+"time}})"
+				query2 += " MERGE (r)-[:HAS_FILE]-> ("+fileId+":File {"+_generateQueryParams(fileId,fileParams,queryParams)+"})";
+				query2 += " MERGE ("+fileId+")-[:HAS_FILE_STATE]-> ("+stateId+":FileState {"+_generateQueryParams(stateId,stateParams,queryParams)+"})"
 				query2 += " MERGE (rs)-[:HAS_FILE_STATE]-> ("+stateId+")"
+
+				//Add category relations
+				file.categories.forEach(function(category,index){
+					var catId = fileId + "c"+index; 
+					var categoryParams = {
+						name: category.name,
+						type: category.type
+					};
+
+					query2 += " MERGE ("+catId+":Category {"+_generateQueryParams(catId,categoryParams,queryParams)+"}) MERGE ("+fileId+")-[:IS_IN_CATEGORY]->("+catId+")"
+				});
+
 			});
 
 			var queryObj = query.getQuery();
@@ -108,27 +124,40 @@ var DBNeo4jAdapter = function(){
 		})
 	}
 
+	function _generateQueryParams(id,params,collection){
+		var queryParams = [];
+
+		var keys = Object.keys(params);
+		keys.forEach(function(param){
+			collection[id+param] = params[param];
+			queryParams.push(param+":{"+id+param+"}");
+		})
+
+		return queryParams.join(", ");
+
+	}
+
 	function _createUserIfNotExist(clientId){
 		return new Promise(function(resolve, reject){
-		
-		
-		var query = "MATCH (u:User {clientId:{clientId}}) -[:HAS_REPO]-> (r:Repo) RETURN u,r";
-		db.cypher({query: query, params:{clientId:clientId}},function(error,result){
 
-			if(error !== null){
-				reject(error);
+
+			var query = "MATCH (u:User {clientId:{clientId}}) -[:HAS_REPO]-> (r:Repo) RETURN u,r";
+			db.cypher({query: query, params:{clientId:clientId}},function(error,result){
+
+				if(error !== null){
+					reject(error);
 					console.log("User error",error);
-				return;
-			}
-			if(result.length<1){
-				_createUser(clientId).then(function(){
+					return;
+				}
+				if(result.length<1){
+					_createUser(clientId).then(function(){
+						resolve();
+					},function(error){reject(error)});
+				}else{
 					resolve();
-				},function(error){reject(error)});
-			}else{
-				resolve();
-				console.log("User exists");
-			}
-		})
+					console.log("User exists");
+				}
+			})
 		})
 	}
 
@@ -138,15 +167,15 @@ var DBNeo4jAdapter = function(){
 
 			db.cypher({query: query, params:{clientId:clientId}},function(error,result){
 
-			if(error !== null){
-				reject(error);
-				return;
-			}
-			resolve();
+				if(error !== null){
+					reject(error);
+					return;
+				}
+				resolve();
+			})
 		})
-		})
-		
-		}
+
+	}
 
 	function getFileStates(clientId,filepath){
 		return new Promise(function(resolve,reject){
@@ -199,15 +228,95 @@ var DBNeo4jAdapter = function(){
 					reject(error);
 				}else{
 
-					resolve(_convertRepoStates(result));
+					resolve(_convertRepoStateList(result));
 				}
 			});
 		})
 	}
 
-	function _convertRepoStates(repoStates){
+	function _convertRepoStateList(repoStates){
 		return repoStates.map(function(state){
 			return state.s.properties;
+		})
+	}
+
+	function getRepoStates(clientId){
+		return new Promise(function(resolve, reject){
+
+			var params = {clientId: clientId};
+			var query = "Match (u:User {clientId:{clientId}})-[:HAS_REPO]->(r:Repo)-[:HAS_REPO_STATE]-> (state:RepoState) -[:HAS_FILE_STATE]->(fileState:FileState)<-[:HAS_FILE_STATE]-(file:File) OPTIONAL MATCH (f) -[:IS_IN_CATEGORY]-(category:Category) return state,file,fileState,category";
+
+			db.cypher({query: query, params: params},function(error,result){
+				if(error !== null){
+					reject(error);
+					return;
+				}
+
+				_convertRepoStates(result).then(function(result){
+					resolve(result);
+				},function(error){reject(error);});
+
+			});
+		})
+	}
+
+	function _repoStatesConverter(){
+
+		/**
+		 * From: [Node] where Node contains (FileState,File,State,Category); "Row" from database
+		 * To : [file] -> file:[states:[],name,etc,category], state{numberOfLines,numberOfMarkers,etc}
+		 */
+		var fileIndex  = {};
+		var recordedFileStates = [];
+
+		function addFileState(file,fileState,state,category){
+			if(fileIndex[file._id] === undefined){
+				var categoryObj = null;
+				if(category !== undefined){
+					categoryObj = _.assign({},category.properties);
+				}
+
+				var fileObj= { states:[],category:categoryObj}
+				_.assign(fileObj,file.properties);
+				fileIndex[file._id] = fileObj;
+			}
+
+			if(recordedFileStates.indexOf(fileState._id)>=0){
+				return;
+			}
+
+
+			var fileStateObj = {};
+			_.assign(fileStateObj,fileState.properties);
+			fileIndex[file._id].states.push(fileStateObj);
+			recordedFileStates.push(fileState._id);
+		}
+
+		function getConvertedStructure(){
+			var output = [];
+			var fileIds = Object.keys(fileIndex);
+			fileIds.forEach(function(id){
+				output.push(fileIndex[id]);
+			})
+
+			return output;
+		}
+		return {addFileState:addFileState,getConvertedStructure:getConvertedStructure}
+	}
+
+	function _convertRepoStates(dbOutPut){
+		return new Promise(function(resolve, reject){
+			var states = [];
+			var converter = new _repoStatesConverter(); 
+
+			dbOutPut.forEach(function(node){
+
+				converter.addFileState(node.file,node.fileState,node.state,node.category);
+				
+			})
+
+			resolve(converter.getConvertedStructure());
+
 		})
 	}
 
@@ -222,6 +331,7 @@ var DBNeo4jAdapter = function(){
 		addState: addState,
 		addStates: addStates,
 		getFileStates: getFileStates,
+		getRepoStates: getRepoStates,
 		getRepoStateList:getRepoStateList,
 		addCategory: addCategory,
 		__forTesting:__forTesting
