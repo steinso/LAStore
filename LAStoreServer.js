@@ -22,6 +22,7 @@ var request = require("request");
 var Timer = require("./Timer.js");
 
 var PORT = argv.p || argv.port || "50812";
+var REPO_PATH = "/srv/LAHelper/logs/";
 
 app.use(bodyParser.json({limit:"1mb"}));
 
@@ -120,7 +121,7 @@ app.get("/client/:nickname",function(req,res){
 
 app.get("/client", function(req, res){
 
-	var path = "/srv/LAHelper/logs/";
+	var path = REPO_PATH;
 	var clientList = [];
 	fs.readdir(path, function(err, files){
 
@@ -142,7 +143,7 @@ app.post("/notify/repo/:clientId",function(req,res){
 	var clientId = req.params.clientId;
 	//Diff list of commits in GIT to lists of commits in DB
 	console.log("Notification received for:"+clientId)
-	var repoPath = "/srv/LAHelper/logs/"+clientId;
+	var repoPath = REPO_PATH+clientId;
 	var timer = Timer.create("notify");
 	timer.start();
 	GitBroker.getCommitListFromRepo(repoPath).then(function(commitList){
