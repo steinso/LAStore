@@ -38,14 +38,23 @@ var DatabaseHandler = function(databaseFile){
 	};
 
 	var insertClient = function(userId){
-
+		return new Promise(function(resolve, reject){
+		
 		var values = {
 			$userId:userId,
 		};
 
 		//We dont use prepared statements as it will be a long delay between insertions
-		var stmt = db.run("INSERT INTO user (userId,ovinger,requests) VALUES ($userId,0,0)",values);
+		var stmt = db.run("INSERT INTO user (userId,ovinger,requests) VALUES ($userId,0,0)",values,function(error){
+			if(error !==null){
+				reject(error);
+				return;
+			}
+			resolve();
+		});
+						  
 
+	})
 	};
 
 	var setClientName = function(clientId,name){
@@ -58,15 +67,44 @@ var DatabaseHandler = function(databaseFile){
 		};
 
 		console.log("Setting client name for user:",clientId);
-		var stmt = db.run("UPDATE user SET name = $name  WHERE userId= $clientId;",values,function(error){
+		//Check if client exists
+		_createClientIfNotExists(clientId).then(function(){
+
+				var stmt = db.run("UPDATE user SET name = $name  WHERE userId= $clientId;",values,function(error){
 			if(error == null){
 				resolve()
 			}else{
-				reject("DB: Could not set name: "+name+" -> "+error);
+				reject(error);
 			}
 			});
+
+		},function(error){
+			reject(error);
+		});
 		})
 	};
+
+	var _createClientIfNotExists = function(clientId){
+		return new Promise(function(resolve, reject){
+			var values = {
+				$clientId: clientId
+			}
+			var existsStms = db.run("SELECT * FROM user WHERE userId= $clientId;",values,function(error,rows){
+				if(error !== null){
+					reject(error);
+				}
+
+				if(rows === undefined || rows.length < 1){
+					insertClient(clientId).then(function(){
+						resolve();
+					},function(error){reject(error)});
+
+				}else{
+					resolve();
+				}
+		}) 
+		})
+	}
 	
 	var setClientParticipating= function(clientId,participating){
 		return new Promise(function(resolve, reject){

@@ -160,6 +160,7 @@ app.post("/notify/repo/:clientId",function(req,res){
 				return;
 			}
 			GitBroker.getCommitsFromRepo(repoPath,difference).then(function(commits){
+				console.log("Got commits from repo");
 				var body = {commits:commits};
 				request({url:"http://localhost:50811/process",method:"POST",body:body,json:true},function(error,response,body){
 					var analyticCommits = body;
