@@ -36,7 +36,7 @@ var getCommitListFromRepo = function(repoPath){
 	return new Promise(function(resolve, reject){
 		var commitList = [];
 		console.log("In promise")
-	
+
 		open(repoPath).then(function(repo) {
 			return repo.getMasterCommit();
 		},function(error){reject(error);})
@@ -122,16 +122,16 @@ var getFileCommits = function(repoPath,files,_requestedCommits){
 				var promises = [];
 				_commitObjs.forEach(function(commit){
 
-						if(requestedCommits.length>0 
-						&& requestedCommits.indexOf(commit.sha()) === -1){
-							return;
-						}
-						
-						promises.push(generateCommitObject(commit,filesInRepo)
-								.then(function(commit){
-									commits.push(commit);
-								},function(error){reject(error);}));
-					})
+					if(requestedCommits.length>0 
+					   && requestedCommits.indexOf(commit.sha()) === -1){
+						   return;
+					   }
+
+					   promises.push(generateCommitObject(commit,filesInRepo)
+									 .then(function(commit){
+										 commits.push(commit);
+									 },function(error){reject(error);}));
+				})
 
 				Promise.all(promises).then(function(){
 					resolve(commits);
@@ -146,18 +146,18 @@ var getFileCommits = function(repoPath,files,_requestedCommits){
 
 			history.on("commit", function(commit) {
 				/*
-				if(requestedCommits.length>0 
-			    && requestedCommits.indexOf(commit.sha()) === -1){
-					return;
-				}
+				   if(requestedCommits.length>0 
+				   && requestedCommits.indexOf(commit.sha()) === -1){
+				   return;
+				   }
 
-				generateCommitObject(commit,filesInRepo).then(function(_commit){
-					commits.push(_commit);
+				   generateCommitObject(commit,filesInRepo).then(function(_commit){
+				   commits.push(_commit);
 
-				},function(error){
-					console.log("Could not parse commit: "+error);
-				});
-				*/
+				   },function(error){
+				   console.log("Could not parse commit: "+error);
+				   });
+				   */
 			});
 
 			// Start emitting events.
@@ -166,8 +166,111 @@ var getFileCommits = function(repoPath,files,_requestedCommits){
 	});
 };
 
+var generateCommitObject= function(_commit, filesInRepo){
+	return new Promise(function(resolve, reject){
+		var promises = [];
 
-var generateCommitObject = function(_commit, filesInRepo){
+		var commit = new Commit();
+		commit.time = _commit.date();
+		commit.sha = _commit.sha();
+		commit.msg = _commit.message();
+		commit.files = [];
+
+		_commit.getDiff().then(function(diffList){
+			var pathList = [];
+			diffList.forEach(function(diff){
+				for(var i=0;i<diff.numDeltas();i++){
+					var diffDelta = diff.getDelta(i);
+					var path = diffDelta.newFile().path();
+					pathList.push(path);
+				}
+			});
+
+			//Get file contents from commit
+			pathList.forEach(function(filename){
+
+				var promise = new Promise(function(resolve,reject){
+
+					_commit.getEntry(filename).then(function(entry){
+						entry.getBlob().then(function(blob){
+							var file = new File();
+							file.name = filename;
+							file.fileContents = String(blob);
+							commit.files.push(file);
+							resolve();
+						},function(error){reject(error)});
+					},function(error){
+						//if the file is not found, we just skip it for the current commit
+						console.log("File not found: ",error);
+						resolve();});
+				},function(error){reject(error);})
+				promises.push(promise);
+			});
+
+
+			Promise.all(promises).then(function(){
+				resolve(commit);
+			},function(error){
+				reject(error);
+			});
+
+		});
+
+	});
+};
+
+
+var generateCommitObjectTree = function(_commit, filesInRepo){
+	return new Promise(function(resolve, reject){
+		var promises = [];
+
+		var commit = new Commit();
+		commit.time = _commit.date();
+		commit.sha = _commit.sha();
+		commit.msg = _commit.message();
+		commit.files = [];
+
+		var trees = []; 
+
+		_commit.getTree().then(function(tree){
+			var eventEmitter = tree.walk(true); //Walk blobs only
+			eventEmitter.on("entry",function(tree){
+				trees.push(tree);
+			});
+
+			eventEmitter.on("end", function(){
+				//Looks like a bug in NodeGit,
+				//the tree array given to the End function is inconsistent
+				//with each entry given by on entry. -
+				// Therefore we dont rely on it, and create our own
+
+				trees.forEach(function(tree){
+					var promise = new Promise(function(resolve,reject){
+
+						tree.getBlob().then(function(blob){
+							var file = new File();
+							file.name = tree.path();
+							file.fileContents =  blob.toString();
+							commit.files.push(file);
+							resolve();
+						},function(error){reject(error)});
+					},function(error){reject(error);});
+					promises.push(promise);
+				});
+
+				Promise.all(promises).then(function(){
+					resolve(commit);
+				},function(error){
+					reject(error);
+				});
+			});
+			eventEmitter.start();
+		});
+	});
+};
+
+
+var generateCommitObjectOld = function(_commit, filesInRepo){
 	return new Promise(function(resolve, reject){
 		var promises = [];
 
@@ -183,13 +286,13 @@ var generateCommitObject = function(_commit, filesInRepo){
 			var promise = new Promise(function(resolve,reject){
 
 				_commit.getEntry(filename).then(function(entry){
-				entry.getBlob().then(function(blob){
-					var file = new File();
-					file.name = filename;
-					file.fileContents = String(blob);
-					commit.files.push(file);
-					resolve();
-				},function(error){reject(error)});
+					entry.getBlob().then(function(blob){
+						var file = new File();
+						file.name = filename;
+						file.fileContents = String(blob);
+						commit.files.push(file);
+						resolve();
+					},function(error){reject(error)});
 				},function(error){
 					//if the file is not found, we just skip it for the current commit
 					console.log(error);
@@ -203,7 +306,7 @@ var generateCommitObject = function(_commit, filesInRepo){
 		},function(error){
 			reject(error);
 		}
-		);
+								  );
 	});
 };
 

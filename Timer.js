@@ -30,6 +30,9 @@ var StopWatch = function(){
 	};
 
 	var stop = function(){
+		if(running == 0 ){
+			return;
+		}
 		var time = Date.now() - running;
 		last = time;
 
@@ -37,8 +40,6 @@ var StopWatch = function(){
 
 		sum += time;
 		number++;
-		console.log("Timer stopped:"+time);
-		
 		return time;
 	};
 
@@ -58,12 +59,17 @@ var StopWatch = function(){
 	var getStats = function(){
 		return "";
 	};
+	
+	var getTotal = function(){
+		return sum;
+	}
 
 	return{
 		start:start,
 		stop:stop,
 		reset:reset,
 		getLast:getLast,
+		getTotal:getTotal,
 		average:average
 	};
 };

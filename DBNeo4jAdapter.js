@@ -11,7 +11,8 @@
 var neo4j= require("neo4j");
 var CypherMergeQuery = require("./CypherMergeQuery.js");
 var Promise = require("es6-promise").Promise;
-var db = new neo4j.GraphDatabase("http://192.168.59.103:7474");
+var db = new neo4j.GraphDatabase("http://localhost:7474");
+var Timer = require("./Timer.js");
 var _ = require("lodash");
 
 
@@ -22,9 +23,11 @@ var _ = require("lodash");
  */
 var DBNeo4jAdapter = function(){
 
+	var neoTimer = Timer.create("NeoTimer");
 
 	function addStates(clientId,states){
 		return new Promise(function(resolve, reject){
+			var timer = Timer.create("AddDBState");
 
 			_createUserIfNotExist(clientId).then(function(){
 
@@ -35,9 +38,13 @@ var DBNeo4jAdapter = function(){
 				}
 
 				var iterator = function(){
+					timer.stop();
 					if(index<states.length){
+						timer.start();
 						addState(clientId,states[index++]).then(iterator,onError);
 					}else{
+						console.log("AVG insertion time: ",timer.average()," Last:",timer.getLast()," Total: ",timer.getTotal());
+						console.log("AVG Neo insertion time: ",neoTimer.average()," Last:",neoTimer.getLast(), "Total: ",neoTimer.getTotal());
 						resolve();
 					}
 
@@ -51,7 +58,7 @@ var DBNeo4jAdapter = function(){
 
 	function addState(clientId, state,callback){
 		return new Promise(function(resolve, reject){
-			console.log("ADding state");
+			//console.log("ADding state");
 
 			var query = new CypherMergeQuery();
 			var userRef = query.addNode("User",{clientId: clientId});
@@ -80,7 +87,7 @@ var DBNeo4jAdapter = function(){
 					contentName: file.contentName,
 					packageName: file.packageName,
 					type: file.type
-				}
+				};
 
 				var stateParams = {
 					numberOfMarkers:  file.numberOfMarkers,
@@ -107,10 +114,12 @@ var DBNeo4jAdapter = function(){
 			});
 
 			var queryObj = query.getQuery();
-			console.log(query2);
+			//console.log(query2);
 
+			neoTimer.start();
 			db.cypher({query: query2, params: queryParams},function(error,result){
-				console.log("Query performed",error,result);
+				neoTimer.stop();
+				//console.log("Query performed",error,result);
 				if(error !== null){
 					reject(error);
 
@@ -272,7 +281,7 @@ var DBNeo4jAdapter = function(){
 		function addFileState(file,fileState,state,category){
 			if(fileIndex[file._id] === undefined){
 				var categoryObj = null;
-				if(category !== undefined){
+				if(category !== undefined && category !== null){
 					categoryObj = _.assign({},category.properties);
 				}
 

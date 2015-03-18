@@ -147,10 +147,17 @@ app.post("/notify/repo/:clientId",function(req,res){
 	var timer = Timer.create("notify");
 	timer.start();
 	GitBroker.getCommitListFromRepo(repoPath).then(function(commitList){
+		timer.stop();
+		console.log("Got commit list in: ",timer.getLast());
+		timer.start();
 
 		var analysisDb = new AnalysisDb();
 		analysisDb.getRepoStateList(clientId).then(function(stateList){
-			
+
+			timer.stop();
+			console.log("Got repo state list in: ",timer.getLast());
+			timer.start();
+
 			stateList = stateList.map(function(state){return state.commitSha});
 			var difference = _.difference(commitList,stateList);
 			console.log(difference);
@@ -161,22 +168,32 @@ app.post("/notify/repo/:clientId",function(req,res){
 				return;
 			}
 			GitBroker.getCommitsFromRepo(repoPath,difference).then(function(commits){
-				console.log("Got commits from repo");
+
+				timer.stop();
+				console.log("Got commits from repo : ",timer.getLast());
+				timer.start();
+
 				var body = {commits:commits};
 				request({url:"http://localhost:50811/process",method:"POST",body:body,json:true},function(error,response,body){
 					var analyticCommits = body;
 
+					timer.stop();
+					console.log("States processed in: ",timer.getLast());
+					timer.start();
 					analysisDb.addStates(clientId,analyticCommits).then(function(result){
 
 						timer.stop();
-						console.log("Time spent: ", timer.getLast());
+						console.log("Inserted states to Neo in: ",timer.getLast());
+						timer.start();
+						console.log("Total time spent: ", timer.getTotal());
 					});
 
-					res.send(JSON.stringify(body));
+			//	res.send(JSON.stringify(body));
+				res.send("OK");
 				});
 				var t = [];
 			},function(error){
-				console.log(error);
+				//console.log(error);
 			});
 
 			//res.send("OK");
@@ -190,6 +207,10 @@ app.post("/notify/repo/:clientId",function(req,res){
 			var response = {status:"OK",error:error};
 			res.send(JSON.stringify(response));
 			console.log("ERROR getting state list from db",error);
+		},function(error){
+			var response = {status:"OK",error:error};
+			res.send(JSON.stringify(response));
+			console.log("ERROR getting commit list from repo",error);
 		});
 	},function(error){
 		var response = {status:"OK",error:error};
@@ -313,6 +334,7 @@ app.get("/repoStates/:clientId", function(req, res){
 	var timer = Timer.create("RepoStates");
 	timer.start();
 	var analysisDb = new AnalysisDb();
+	console.log("Repostates")
 	analysisDb.getRepoStates(clientId).then(function(stateList){
 		timer.stop();
 		console.log("Got states after: "+timer.getLast()+" ms");
