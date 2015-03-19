@@ -171,7 +171,7 @@ var generateCommitObject= function(_commit, filesInRepo){
 		var promises = [];
 
 		var commit = new Commit();
-		commit.time = _commit.date();
+		commit.time = _commit.timeMs();
 		commit.sha = _commit.sha();
 		commit.msg = _commit.message();
 		commit.files = [];
