@@ -270,6 +270,13 @@ var setFile = {
 	files: []
 };
 
+var notifyQueue = [];
+function runNotifyQueue(){
+
+
+
+};
+
 app.post("/file", function(req, res){
 
 	var log = new Log(clientId,"File request");
@@ -287,14 +294,17 @@ app.post("/file", function(req, res){
 
 	log.print();
 	FileOrganizer.store(files,clientId);
-	setTimeout(function(){
-		console.log("Sending notify update");
-		request({url:"http://localhost:"+PORT+"/notify/repo/"+clientId,body:{},json:true,method:"POST"},function(error,body,response){
-			console.log("DB Notification sent")
 
-		})
-	},2000);
+	if(notifyQueue.indexOf(clientId) === -1){
+		notifyQueue.push(clientId);
 
+		setTimeout(function(){
+			notifyQueue.splice(notifyQueue.indexOf(clientId),1);
+			request({url:"http://localhost:"+PORT+"/notify/repo/"+clientId,body:{},json:true,method:"POST"},function(error,body,response){
+				console.log("DB Notification sent for client: ",clientId)
+			});
+		},2000);
+	}
 	var response = {status:"OK"};
 	res.send(JSON.stringify(response));
 });
