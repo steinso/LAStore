@@ -35,11 +35,10 @@ var DBNeo4jAdapter = function(){
 				var queries = states.map(function(state){return generateQueryForState(clientId,state);})
 
 				//Update time of last update
-				//var timeQuery = " SET r.timeOfLastUpdate = {timeOfLastUpdate}";
-				//var params = {timeOfLastUpdate: states[states.length-1].time};
-			//	var 
+				var timeQuery = " SET r.timeOfLastUpdate = {timeOfLastUpdate}";
+				var params = {timeOfLastUpdate: states[states.length-1].time};
 
-				//queries.push({query:timeQuery,params:params,lean:true});
+				queries.push({query:timeQuery,params:params,lean:true});
 
 				db.cypher(queries, function(error,result){
 					if(error !== null){
