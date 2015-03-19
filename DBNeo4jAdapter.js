@@ -32,11 +32,15 @@ var DBNeo4jAdapter = function(){
 			_createUserIfNotExist(clientId).then(function(){
 
 				timer.start();
-				var queries = states.map(function(state){return generateQueryForState(clientId,state);})
+				var queries = states.map(function(state){return generateQueryForState(clientId,state);});
 
 				//Update time of last update
-				var timeQuery = " SET r.timeOfLastUpdate = {timeOfLastUpdate}";
-				var params = {timeOfLastUpdate: states[states.length-1].time};
+			
+				var timeQuery = "MATCH (u:User {clientId:{clientId}}) -[:HAS_REPO]-> (r:Repo) SET r.timeOfLastUpdate = {timeOfLastUpdate}";
+				var params = {
+					timeOfLastUpdate: states[states.length-1].time,
+					clientId:clientId
+				};
 
 				queries.push({query:timeQuery,params:params,lean:true});
 
