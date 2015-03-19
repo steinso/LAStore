@@ -31,37 +31,36 @@ var DBNeo4jAdapter = function(){
 
 			_createUserIfNotExist(clientId).then(function(){
 
-				var index = 0;
-				var onError = function(error){
-					console.log("Error adding states: ",error);
-					iterator();
-				}
+				timer.start();
+				var queries = states.map(function(state){return generateQueryForState(clientId,state);})
 
-				var iterator = function(){
-					timer.stop();
-					if(index<states.length){
-						timer.start();
-						addState(clientId,states[index++]).then(iterator,onError);
+				//Update time of last update
+				//var timeQuery = " SET r.timeOfLastUpdate = {timeOfLastUpdate}";
+				//var params = {timeOfLastUpdate: states[states.length-1].time};
+			//	var 
+
+				//queries.push({query:timeQuery,params:params,lean:true});
+
+				db.cypher(queries, function(error,result){
+					if(error !== null){
+						reject(error);
 					}else{
-						console.log("AVG insertion time: ",timer.average()," Last:",timer.getLast()," Total: ",timer.getTotal());
-						console.log("AVG Neo insertion time: ",neoTimer.average()," Last:",neoTimer.getLast(), "Total: ",neoTimer.getTotal());
+						timer.stop();
+						console.log("DB insertion: "+timer.getTotal());
 						resolve();
 					}
 
-				};
-				iterator();
+				});
+
 			},function(error){
 				console.log("Could not create user: "+error)
 			})
 		});
 	}
 
-	function addState(clientId, state,callback){
-		return new Promise(function(resolve, reject){
+	function generateQueryForState(clientId, state,callback){
 			//console.log("ADding state");
 
-			var query = new CypherMergeQuery();
-			var userRef = query.addNode("User",{clientId: clientId});
 
 			var repoStateParams = {
 				commitSha: state.commitSha,
@@ -76,7 +75,6 @@ var DBNeo4jAdapter = function(){
 				time: state.time
 			}
 			var query2 = "MERGE (u:User {clientId:{clientId}}) -[:HAS_REPO]-> (r:Repo) ";
-			query2 += "MERGE (r) -[:HAS_REPO_STATE]-> (rs:RepoState {commitSha:{commitSha},commitMsg:{commitMsg},time:{time}})"
 
 			state.files.forEach(function(file, index){
 
@@ -98,7 +96,7 @@ var DBNeo4jAdapter = function(){
 
 				query2 += " MERGE (r)-[:HAS_FILE]-> ("+fileId+":File {"+_generateQueryParams(fileId,fileParams,queryParams)+"})";
 				query2 += " MERGE ("+fileId+")-[:HAS_FILE_STATE]-> ("+stateId+":FileState {"+_generateQueryParams(stateId,stateParams,queryParams)+"})"
-				query2 += " MERGE (rs)-[:HAS_FILE_STATE]-> ("+stateId+")"
+				//query2 += " MERGE (rs)-[:HAS_FILE_STATE]-> ("+stateId+")"
 
 				//Add category relations
 				file.categories.forEach(function(category,index){
@@ -113,24 +111,13 @@ var DBNeo4jAdapter = function(){
 
 			});
 
-			var queryObj = query.getQuery();
-			//console.log(query2);
+			//query2 += " SET r.timeOfLastUpdate = {timeOfLastUpdate}";
+			//queryParams['timeOfLastUpdate'] = state.time;
 
-			neoTimer.start();
-			db.cypher({query: query2, params: queryParams},function(error,result){
-				neoTimer.stop();
-				//console.log("Query performed",error,result);
-				if(error !== null){
-					reject(error);
-
-				}else{
-					resolve(result);
-				}
-			});
+			return{query:query2,params:queryParams,lean:true}
 
 			// Not needed, just used for testing atm to validate queries
 			//return queryObj.query;
-		})
 	}
 
 	function _generateQueryParams(id,params,collection){
@@ -172,9 +159,10 @@ var DBNeo4jAdapter = function(){
 
 	function _createUser(clientId){
 		return new Promise(function(resolve, reject){
-			var query = "CREATE (u:User {clientId:{clientId}}) CREATE (r:Repo) CREATE (u)-[:HAS_REPO]->(r)";
+			var query = "CREATE (u:User {clientId:{clientId}}) CREATE (r:Repo {timeOfLastUpdate:{timeOfLastUpdate}}) CREATE (u)-[:HAS_REPO]->(r)";
+			var params = {clientId:clientId,timeOfLastUpdate:0};
 
-			db.cypher({query: query, params:{clientId:clientId}},function(error,result){
+			db.cypher({query: query, params:params},function(error,result){
 
 				if(error !== null){
 					reject(error);
@@ -227,17 +215,25 @@ var DBNeo4jAdapter = function(){
 		return query;
 	}
 
-	function getRepoStateList(clientId){
+	function getTimeOfLastUpdate(clientId){
 		return new Promise(function(resolve, reject){
 			var params = {clientId: clientId};
-			var query = "MATCH (:User {clientId:{clientId}}) -[:HAS_REPO]-> (:Repo) -[:HAS_REPO_STATE]->(s:RepoState) RETURN s";
+			var query = "MATCH (:User {clientId:{clientId}}) -[:HAS_REPO]-> (repo:Repo) return repo";
 
 			db.cypher({query: query, params: params},function(error,result){
 				if(error !== null){
 					reject(error);
 				}else{
 
-					resolve(_convertRepoStateList(result));
+					var timeOfLastUpdate;
+					if(result.length === 0){
+						//TODO: Fix this, an exception whould be fired
+						timeOfLastUpdate = 0;
+					}else{
+
+						timeOfLastUpdate = result[0].repo.properties.timeOfLastUpdate;
+					}
+					resolve(timeOfLastUpdate);
 				}
 			});
 		})
@@ -253,7 +249,7 @@ var DBNeo4jAdapter = function(){
 		return new Promise(function(resolve, reject){
 
 			var params = {clientId: clientId};
-			var query = "Match (u:User {clientId:{clientId}})-[:HAS_REPO]->(r:Repo)-[:HAS_REPO_STATE]-> (state:RepoState) -[:HAS_FILE_STATE]->(fileState:FileState)<-[:HAS_FILE_STATE]-(file:File) OPTIONAL MATCH (f) -[:IS_IN_CATEGORY]-(category:Category) return state,file,fileState,category";
+			var query = "Match (u:User {clientId:{clientId}})-[:HAS_REPO]->(r:Repo)-[:HAS_FILE]-> (file:File) -[:HAS_FILE_STATE]->(fileState:FileState) OPTIONAL MATCH (file) -[:IS_IN_CATEGORY]-(category:Category) return file,category,collect(fileState) as fileStates";
 
 			db.cypher({query: query, params: params},function(error,result){
 				if(error !== null){
@@ -266,7 +262,7 @@ var DBNeo4jAdapter = function(){
 				},function(error){reject(error);});
 
 			});
-		})
+		});
 	}
 
 	function _repoStatesConverter(){
@@ -316,17 +312,34 @@ var DBNeo4jAdapter = function(){
 	function _convertRepoStates(dbOutPut){
 		return new Promise(function(resolve, reject){
 			var states = [];
-			var converter = new _repoStatesConverter(); 
+			var converter = new _repoStatesConverter();
 
-			dbOutPut.forEach(function(node){
+			try{
 
-				converter.addFileState(node.file,node.fileState,node.state,node.category);
-				
-			})
+			var files = dbOutPut.map(function(node){
+				// Copy properties to new file structure
+				//
+				var fileStates = node.fileStates.map(function(fileState){
+					return _.assign({},fileState.properties);
+				});
+				var category = null;
 
-			resolve(converter.getConvertedStructure());
+				if(node.category !== undefined && node.category !== null){
+					category = _.assign({}, node.category.properties);
+				}
 
-		})
+				var file = { states: fileStates, category: category};
+				file = _.assign(file,node.file.properties);
+
+				return file;
+			});
+
+			resolve(files);
+
+			}catch(e){
+				reject(e);
+			}
+		});
 	}
 
 	var __forTesting ={
@@ -337,11 +350,10 @@ var DBNeo4jAdapter = function(){
 	};
 
 	return {
-		addState: addState,
 		addStates: addStates,
 		getFileStates: getFileStates,
 		getRepoStates: getRepoStates,
-		getRepoStateList:getRepoStateList,
+		getTimeOfLastUpdate:getTimeOfLastUpdate,
 		addCategory: addCategory,
 		__forTesting:__forTesting
 	};

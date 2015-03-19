@@ -53,7 +53,7 @@ var getCommitListFromRepo = function(repoPath){
 			});
 
 			history.on("commit", function(commit) {
-				commitList.push(commit.sha());
+				commitList.push({"sha": commit.sha(),"time": commit.timeMs()});
 			});
 
 			// Start emitting events.

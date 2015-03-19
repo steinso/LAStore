@@ -152,22 +152,26 @@ app.post("/notify/repo/:clientId",function(req,res){
 		timer.start();
 
 		var analysisDb = new AnalysisDb();
-		analysisDb.getRepoStateList(clientId).then(function(stateList){
+		analysisDb.getTimeOfLastUpdate(clientId).then(function(timeOfLastUpdate){
 
 			timer.stop();
-			console.log("Got repo state list in: ",timer.getLast());
+			console.log("Got time of last update in: ",timer.getLast());
 			timer.start();
 
-			stateList = stateList.map(function(state){return state.commitSha});
-			var difference = _.difference(commitList,stateList);
-			console.log(difference);
+			//Filter on times
+			var relevantCommits = commitList.filter(function(commit){return commit.time>timeOfLastUpdate});
 
-			if(difference.length<1){
+			//get array of shas only
+			relevantCommits = relevantCommits.map(function(commit){return commit.sha;});
+
+			console.log("# of relevant commits:",relevantCommits.length);
+
+			if(relevantCommits.length<1){
 				var response = {status:"OK"}
 				res.send(JSON.stringify(response));
 				return;
 			}
-			GitBroker.getCommitsFromRepo(repoPath,difference).then(function(commits){
+			GitBroker.getCommitsFromRepo(repoPath,relevantCommits).then(function(commits){
 
 				timer.stop();
 				console.log("Got commits from repo : ",timer.getLast());
@@ -186,36 +190,40 @@ app.post("/notify/repo/:clientId",function(req,res){
 						console.log("Inserted states to Neo in: ",timer.getLast());
 						timer.start();
 						console.log("Total time spent: ", timer.getTotal());
+						var response = {status: "OK", error: error};
+						res.send(JSON.stringify(response));
+					},function(error){
+						var response = {status: "OK",error: error};
+						console.log("ERROR getting states from db",error);
+						res.send(JSON.stringify(response));
 					});
 
 			//	res.send(JSON.stringify(body));
-				res.send("OK");
 				});
-				var t = [];
 			},function(error){
-				//console.log(error);
+				var response = {status:"OK",error:error};
+				console.log("ERROR getting commits from repo",error);
+				res.send(JSON.stringify(response));
 			});
-
-			//res.send("OK");
 
 		},function(error){
 			var response = {status:"OK",error:error};
-			res.send(JSON.stringify(response));
 			console.log("ERROR getting state list from db",error);
+			res.send(JSON.stringify(response));
 		},function(error){
 			
 			var response = {status:"OK",error:error};
-			res.send(JSON.stringify(response));
 			console.log("ERROR getting state list from db",error);
+			res.send(JSON.stringify(response));
 		},function(error){
 			var response = {status:"OK",error:error};
-			res.send(JSON.stringify(response));
 			console.log("ERROR getting commit list from repo",error);
+			res.send(JSON.stringify(response));
 		});
 	},function(error){
 		var response = {status:"OK",error:error};
-		res.send(JSON.stringify(response));
 		console.log("ERROR getting commit list from repo",error);
+		res.send(JSON.stringify(response));
 	});
 	// Then add difference to DB
 
