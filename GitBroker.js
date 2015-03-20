@@ -1,5 +1,5 @@
 "use strict";
-var open = require("nodegit").Repository.open;
+var NodeGit= require("nodegit");
 var timer = require("./Timer.js");
 var exec = require('child_process').exec;
 var fs = require('fs');
@@ -31,13 +31,60 @@ var File = function(){
 	this.fileContents = "";
 };
 
+var getCommitsAfterTime = function(repoPath,timeStamp){
+	return new Promise(function(resolve, reject){
+		var commitList = [];
+		console.log("Fetching relevant commit after: ",timeStamp);
+
+		NodeGit.Repository.open(repoPath).then(function(repo) {
+			repo.head().then(function(headRef){
+
+				var revwalk = repo.createRevWalk();
+				revwalk.push(headRef.target());
+				revwalk.getCommitsUntil(function(commit){
+					return commit.timeMs()>timeStamp;
+				}).then(function(commits){
+					//Revwalk has a bug where the last commit is always returned
+					if(commits.length === 1 && commits[0].timeMs()<=timeStamp){
+						commits = [];
+					}
+
+					console.log("Found relevant commits: ",commits.length);
+					
+
+					var promises = [];
+					var commitList = [];
+					commits.forEach(function(commit){
+
+					promises.push(generateCommitObject(commit)
+						.then(function(commit){
+						 commitList.push(commit);
+					 },function(error){
+						 reject(error);
+					 }));
+					});
+
+					Promise.all(promises).then(function(){
+						resolve(commitList);
+					}).catch(function(error){
+						reject(error);
+					});
+				},function(error){reject(error);})
+			},function(error){
+				reject(error)
+			})
+
+		},function(error){reject(error)});
+	});
+};
+
 var getCommitListFromRepo = function(repoPath){
 	console.log("Get commit list")
 	return new Promise(function(resolve, reject){
 		var commitList = [];
 		console.log("In promise")
 
-		open(repoPath).then(function(repo) {
+		NodeGit.Repository.open(repoPath).then(function(repo) {
 			return repo.getMasterCommit();
 		},function(error){reject(error);})
 		.then(function(firstCommitOnMaster) {
@@ -107,7 +154,7 @@ var getFileCommits = function(repoPath,files,_requestedCommits){
 		var commits = [];
 		var filesInRepo = files;
 		// Open the repository directory.
-		open(repoPath)
+		NodeGit.Repository.open(repoPath)
 		// Open the master branch.
 		.then(function(repo) {
 			return repo.getMasterCommit();
@@ -166,7 +213,7 @@ var getFileCommits = function(repoPath,files,_requestedCommits){
 	});
 };
 
-var generateCommitObject= function(_commit, filesInRepo){
+var generateCommitObject= function(_commit){
 	return new Promise(function(resolve, reject){
 		var promises = [];
 
@@ -312,5 +359,6 @@ var generateCommitObjectOld = function(_commit, filesInRepo){
 
 module.exports = {
 	getCommitsFromRepo: getCommitsFromRepo,
+	getCommitsAfterTime: getCommitsAfterTime,
 	getCommitListFromRepo: getCommitListFromRepo
 };

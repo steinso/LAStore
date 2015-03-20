@@ -146,66 +146,50 @@ app.post("/notify/repo/:clientId",function(req,res){
 	var repoPath = REPO_PATH+clientId;
 	var timer = Timer.create("notify");
 	timer.start();
-	GitBroker.getCommitListFromRepo(repoPath).then(function(commitList){
+
+	var analysisDb = new AnalysisDb();
+	analysisDb.getTimeOfLastUpdate(clientId).then(function(timeOfLastUpdate){
+
 		timer.stop();
-		console.log("Got commit list in: ",timer.getLast());
+		console.log("Got time of last update in: ",timer.getLast());
 		timer.start();
 
-		var analysisDb = new AnalysisDb();
-		analysisDb.getTimeOfLastUpdate(clientId).then(function(timeOfLastUpdate){
-
+		GitBroker.getCommitsAfterTime(repoPath,timeOfLastUpdate).then(function(relevantCommits){
 			timer.stop();
-			console.log("Got time of last update in: ",timer.getLast());
+			console.log("Got commit list in: ",timer.getLast());
 			timer.start();
 
 			//Filter on times
-			var relevantCommits = commitList.filter(function(commit){return commit.time>timeOfLastUpdate});
-
-			//get array of shas only
-			relevantCommits = relevantCommits.map(function(commit){return commit.sha;});
-
-			console.log("# of relevant commits:",relevantCommits.length);
-
 			if(relevantCommits.length<1){
 				var response = {status:"OK"}
+				console.log("Total time spent: ", timer.getTotal());
 				res.send(JSON.stringify(response));
 				return;
 			}
-			GitBroker.getCommitsFromRepo(repoPath,relevantCommits).then(function(commits){
+			var body = {commits:relevantCommits};
+			request({url:"http://localhost:50811/process",method:"POST",body:body,json:true},function(error,response,body){
+				var analyticCommits = body;
 
 				timer.stop();
-				console.log("Got commits from repo : ",timer.getLast());
+				console.log("States processed in: ",timer.getLast());
 				timer.start();
-
-				var body = {commits:commits};
-				request({url:"http://localhost:50811/process",method:"POST",body:body,json:true},function(error,response,body){
-					var analyticCommits = body;
+				analysisDb.addStates(clientId,analyticCommits).then(function(result){
 
 					timer.stop();
-					console.log("States processed in: ",timer.getLast());
+					console.log("Inserted states to Neo in: ",timer.getLast());
 					timer.start();
-					analysisDb.addStates(clientId,analyticCommits).then(function(result){
-
-						timer.stop();
-						console.log("Inserted states to Neo in: ",timer.getLast());
-						timer.start();
-						console.log("Total time spent: ", timer.getTotal());
-						var response = {status: "OK", error: error};
-						res.send(JSON.stringify(response));
-					},function(error){
-						var response = {status: "OK",error: error};
-						console.log("ERROR getting states from db",error);
-						res.send(JSON.stringify(response));
-					});
-
-			//	res.send(JSON.stringify(body));
+					console.log("Total time spent: ", timer.getTotal());
+					var response = {status: "OK", error: error};
+					res.send(JSON.stringify(response));
+				},function(error){
+					var response = {status: "OK",error: error};
+					console.log("ERROR getting states from db",error);
+					res.send(JSON.stringify(response));
 				});
-			},function(error){
-				var response = {status:"OK",error:error};
-				console.log("ERROR getting commits from repo",error);
-				res.send(JSON.stringify(response));
-			});
 
+		//	res.send(JSON.stringify(body));
+			});
+			
 		},function(error){
 			var response = {status:"OK",error:error};
 			console.log("ERROR getting state list from db",error);
