@@ -33,11 +33,19 @@ var DBNeo4jAdapter = function(){
 				var timeOfLastUpdate = 0;
 
 				timer.start();
+
 				var queries = states.map(function(state){
+					// States with 0 files, contains no interesting state information
+					if(state.files.length === 0){return;}
 					if(timeOfLastUpdate<state.time){
 						timeOfLastUpdate = state.time;
 					}
-					return generateQueryForState(clientId,state);});
+
+					return generateQueryForState(clientId,state);
+				});
+
+				// Since we skip states with empty files, they show up as undefined in the array
+				queries = queries.filter(function(query){return query !== undefined;})
 
 				//Update time of last update
 			
