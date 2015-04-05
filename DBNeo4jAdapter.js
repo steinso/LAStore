@@ -35,11 +35,13 @@ var DBNeo4jAdapter = function(){
 				timer.start();
 
 				var queries = states.map(function(state){
-					// States with 0 files, contains no interesting state information
-					if(state.files.length === 0){return;}
+					// Store timestamp of last processed state
 					if(timeOfLastUpdate<state.time){
 						timeOfLastUpdate = state.time;
 					}
+
+					// States with 0 files, contains no interesting state information
+					if(state.files.length === 0){return;}
 
 					return generateQueryForState(clientId,state);
 				});
@@ -57,7 +59,9 @@ var DBNeo4jAdapter = function(){
 
 				queries.push({query:timeQuery,params:params,lean:true});
 
+				debugger;
 				db.cypher(queries, function(error,result){
+					debugger;
 					if(error !== null){
 						reject(error);
 					}else{
@@ -77,7 +81,6 @@ var DBNeo4jAdapter = function(){
 	function generateQueryForState(clientId, state,callback){
 			//console.log("ADding state");
 
-
 			var repoStateParams = {
 				commitSha: state.commitSha,
 				commitMsg: state.commitMsg,
@@ -85,11 +88,12 @@ var DBNeo4jAdapter = function(){
 
 			};
 			var queryParams = {
-				clientId:clientId, 
+				clientId: clientId,
 				commitSha: state.commitSha,
 				commitMsg: state.commitMsg,
 				time: state.time
-			}
+			};
+
 			var query2 = "MERGE (u:User {clientId:{clientId}}) -[:HAS_REPO]-> (r:Repo) ";
 
 			state.files.forEach(function(file, index){
