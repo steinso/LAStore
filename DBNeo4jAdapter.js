@@ -126,7 +126,28 @@ var DBNeo4jAdapter = function(){
 						type: category.type
 					};
 
-					query2 += " MERGE ("+catId+":Category {"+_generateQueryParams(catId,categoryParams,queryParams)+"}) MERGE ("+fileId+")-[:IS_IN_CATEGORY]->("+catId+")"
+					query2 += " MERGE ("+catId+":Category {"+_generateQueryParams(catId,categoryParams,queryParams)+"}) MERGE ("+fileId+")-[:IS_IN_CATEGORY]->("+catId+")";
+				});
+
+				//Add marker relations
+				file.markers.forEach(function(marker, index){
+					var markerId = stateId + "m"+index;
+					var markerParams = {
+						category: marker.categoryId || -1,
+						lineNumber: marker.lineNumber || -1,
+						priority: marker.priority || -1,
+						message: marker.message || "",
+						charStart: marker.charStart || 1
+					};
+
+					var catId = stateId+"mc"+index;
+					var categoryParams = {
+						category:marker.categoryId || -1
+					}
+
+					query2 += " MERGE ("+stateId+") -[:HAS_MARKER]-> ("+markerId+":Marker {"+_generateQueryParams(markerId,markerParams,queryParams)+"})";
+					query2 += " MERGE ("+catId+":MarkerType {"+_generateQueryParams(catId,categoryParams,queryParams)+"})";
+					query2 += " MERGE ("+markerId+") -[:IS_OF_TYPE]-> ("+catId+")";
 				});
 
 			});
@@ -134,7 +155,7 @@ var DBNeo4jAdapter = function(){
 			//query2 += " SET r.timeOfLastUpdate = {timeOfLastUpdate}";
 			//queryParams['timeOfLastUpdate'] = state.time;
 
-			return{query:query2,params:queryParams,lean:true}
+			return{query: query2,params: queryParams,lean: true}
 
 			// Not needed, just used for testing atm to validate queries
 			//return queryObj.query;
