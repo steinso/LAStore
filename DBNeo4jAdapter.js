@@ -25,6 +25,44 @@ var DBNeo4jAdapter = function(){
 
 	var neoTimer = Timer.create("NeoTimer");
 
+	function addTests(clientId, tests){
+		return new Promise(function(resolve, reject){
+
+			var timer = Timer.create("AddDBTests");
+			timer.start();
+
+			var queries = tests.map(function(test){
+				var params = {
+					clientId: clientId,
+					contentName: test.contentName,
+					packageName: test.packageName,
+					type: "class", // A test is always for a class
+					time: test.time,
+					methodName: test.methodName,
+					result: test.result
+				};
+
+				var query = "MATCH (u:User {clientId:{clientId}})-[r1:HAS_REPO]-(r:Repo)-[r2:HAS_FILE]-(f:File {contentName: {contentName}, packageName: {packageName}, type:{type}})-[r3:HAS_FILE_STATE]-(fs:FileState) ";
+				query += " WHERE fs.time < {time} AND f.type = 'class' ";
+				query += " WITH fs ORDER BY fs.time DESC LIMIT 1 ";
+				query += " MERGE (fs)-[:HAS_TEST]->(t:Test {time:{time},className:{contentName},packageNa:{packageName},methodName:{methodName},result:{result} })";
+
+				return {query: query, params: params, lean: true};
+			});
+
+			db.cypher(queries, function(error,result){
+					if(error !== null){
+						reject(error);
+					}else{
+						timer.stop();
+						console.log("DB test insertion: "+timer.getTotal());
+						resolve();
+					}
+
+				});
+		});
+	}
+
 	function addStates(clientId,states){
 		return new Promise(function(resolve, reject){
 			var timer = Timer.create("AddDBState");
@@ -59,9 +97,7 @@ var DBNeo4jAdapter = function(){
 
 				queries.push({query:timeQuery,params:params,lean:true});
 
-				debugger;
 				db.cypher(queries, function(error,result){
-					debugger;
 					if(error !== null){
 						reject(error);
 					}else{
@@ -108,19 +144,19 @@ var DBNeo4jAdapter = function(){
 				};
 
 				var stateParams = {
-					numberOfMarkers:  file.numberOfMarkers,
-					numberOfLines:  file.numberOfLines,
-					numberOfFailedTests:  file.numberOfFailedTests,
+					numberOfMarkers: file.numberOfMarkers,
+					numberOfLines: file.numberOfLines,
+					numberOfFailedTests: file.numberOfFailedTests,
 					time: state.time
-				}
+				};
 
 				query2 += " MERGE (r)-[:HAS_FILE]-> ("+fileId+":File {"+_generateQueryParams(fileId,fileParams,queryParams)+"})";
 				query2 += " MERGE ("+fileId+")-[:HAS_FILE_STATE]-> ("+stateId+":FileState {"+_generateQueryParams(stateId,stateParams,queryParams)+"})"
 				//query2 += " MERGE (rs)-[:HAS_FILE_STATE]-> ("+stateId+")"
 
 				//Add category relations
-				file.categories.forEach(function(category,index){
-					var catId = fileId + "c"+index; 
+				file.categories.forEach(function(category, index){
+					var catId = fileId + "c" + index;
 					var categoryParams = {
 						name: category.name,
 						type: category.type
@@ -134,6 +170,7 @@ var DBNeo4jAdapter = function(){
 					var markerId = stateId + "m"+index;
 					var markerParams = {
 						category: marker.categoryId || -1,
+						categoryName: marker.categoryName || "undefined",
 						lineNumber: marker.lineNumber || -1,
 						priority: marker.priority || -1,
 						message: marker.message || "",
@@ -142,6 +179,7 @@ var DBNeo4jAdapter = function(){
 
 					var catId = stateId+"mc"+index;
 					var categoryParams = {
+						categoryName: marker.categoryName || "undefined",
 						category:marker.categoryId || -1
 					}
 
@@ -290,7 +328,7 @@ var DBNeo4jAdapter = function(){
 		return new Promise(function(resolve, reject){
 
 			var params = {clientId: clientId};
-			var query = "Match (u:User {clientId:{clientId}})-[:HAS_REPO]->(r:Repo)-[:HAS_FILE]-> (file:File) -[:HAS_FILE_STATE]->(fileState:FileState) OPTIONAL MATCH (file) -[:IS_IN_CATEGORY]-(category:Category) return file,category,collect(fileState) as fileStates";
+			var query = "Match (u:User {clientId:{clientId}})-[:HAS_REPO]->(r:Repo)-[:HAS_FILE]-> (file:File) -[:HAS_FILE_STATE]->(fileState:FileState) OPTIONAL MATCH (file) -[:IS_IN_CATEGORY]-(category:Category) OPTIONAL MATCH (fileState)-[:HAS_TEST]->(test:Test) return file,category,collect(fileState) as fileStates,collect(test) as tests";
 
 			db.cypher({query: query, params: params},function(error,result){
 				if(error !== null){
@@ -302,6 +340,87 @@ var DBNeo4jAdapter = function(){
 					resolve(result);
 				},function(error){reject(error);});
 
+			});
+		});
+	}
+
+	function getMarkerTypes(){
+		return new Promise(function(resolve, reject){
+
+			var query = "Match (markerType:MarkerType)<-[r:IS_OF_TYPE]-(m:Marker) return markerType, count(r) as occurences, collect(m.message) as messages ORDER BY occurences DESC";
+
+			db.cypher({query: query}, function(error, result){
+				if(error !== null){
+					reject(error);
+					return;
+				}
+
+				var markerTypes = result.map(function(row){
+
+					// give count of most common messages
+					var messages = {};
+					row.messages.forEach(function(msg){
+						if(messages[msg] === undefined){
+							messages[msg] = 0;
+						}
+						messages[msg]++;
+					});
+
+					var markerType = {
+						category: row.markerType.properties.category,
+						occurences: row.occurences,
+						messages: messages
+					};
+
+					return markerType;
+				});
+
+				resolve(markerTypes);
+			});
+		});
+	}
+
+
+	function getMarkerTypesByCategory(){
+		return new Promise(function(resolve, reject){
+
+			var query = "Match (c:Category)<-[:IS_IN_CATEGORY]-(f:File)-[:HAS_FILE_STATE]->(fs:FileState)-[rm:HAS_MARKER]->(m:Marker)-[:IS_OF_TYPE]->(mt:MarkerType) return c as category,mt as markertype,count(rm) as occurences, collect(m.message) as messages ORDER BY category.name, occurences DESC";
+
+			db.cypher({query: query}, function(error, result){
+				if(error !== null){
+					reject(error);
+					return;
+				}
+
+				var markersByCategory = {};
+				result.forEach(function(row){
+					var categoryName = row.category.properties.name;
+					if(markersByCategory[categoryName] === undefined){
+						markersByCategory[categoryName] = [];
+					}
+					var category = markersByCategory[categoryName];
+
+
+					// give count of most common messages
+					var messages = {};
+					row.messages.forEach(function(msg){
+						if(messages[msg] === undefined){
+							messages[msg] = 0;
+						}
+						messages[msg]++;
+					});
+
+					//Add info
+					var markerType = row.markertype.properties.category;
+
+					category.push({
+						category: markerType,
+						messages: messages,
+						occurences: row.occurences
+					});
+				});
+
+				resolve(markersByCategory);
 			});
 		});
 	}
@@ -363,13 +482,17 @@ var DBNeo4jAdapter = function(){
 				var fileStates = node.fileStates.map(function(fileState){
 					return _.assign({},fileState.properties);
 				});
+
+				var tests = node.tests.map(function(test){
+					return _.assign({},test.properties);
+				});
 				var category = null;
 
 				if(node.category !== undefined && node.category !== null){
 					category = _.assign({}, node.category.properties);
 				}
 
-				var file = { states: fileStates, category: category};
+				var file = { states: fileStates, tests: tests, category: category};
 				file = _.assign(file,node.file.properties);
 
 				return file;
@@ -387,16 +510,19 @@ var DBNeo4jAdapter = function(){
 		get db () {return db;},
 		set db (url) {
 			db = new neo4j.GraphDatabase(url);
-		},
+		}
 	};
 
 	return {
 		addStates: addStates,
+		addTests: addTests,
 		getFileStates: getFileStates,
 		getRepoStates: getRepoStates,
-		getTimeOfLastUpdate:getTimeOfLastUpdate,
+		getMarkerTypes: getMarkerTypes,
+		getMarkerTypesByCategory: getMarkerTypesByCategory,
+		getTimeOfLastUpdate: getTimeOfLastUpdate,
 		addCategory: addCategory,
-		__forTesting:__forTesting
+		__forTesting: __forTesting
 	};
 };
 

@@ -89,7 +89,6 @@ app.get("/client/participating",function(req,res){
 
 app.get("/client/:nickname",function(req,res){
 
-
 	var nickname = req.params.nickname;
 	var log = new Log("Unknown","Getting id for nick: "+nickname);
 	var allowedNamePattern = /^[A-z0-9_]+$/;
@@ -168,12 +167,14 @@ app.post("/notify/repo/:clientId",function(req,res){
 			}
 			var body = {commits:relevantCommits};
 			request({url:"http://localhost:50811/process",method:"POST",body:body,json:true},function(error,response,body){
-				var analyticCommits = body;
+				var analyticCommits = body.states;
+				var tests = body.tests;
 
 				timer.stop();
 				console.log("States processed in: ",timer.getLast());
 				timer.start();
 				analysisDb.addStates(clientId,analyticCommits).then(function(result){
+					analysisDb.addTests(clientId,tests).then(function(result){
 
 					timer.stop();
 					console.log("Inserted states to Neo in: ",timer.getLast());
@@ -181,11 +182,17 @@ app.post("/notify/repo/:clientId",function(req,res){
 					console.log("Total time spent: ", timer.getTotal());
 					var response = {status: "OK", error: error};
 					res.send(JSON.stringify(response));
+
 				},function(error){
 					var response = {status: "OK",error: error};
 					console.log("ERROR getting states from db",error);
 					res.send(JSON.stringify(response));
 				});
+			},function(error){
+					var response = {status: "OK",error: error};
+					console.log("ERROR getting states from db",error);
+					res.send(JSON.stringify(response));
+			});
 
 		//	res.send(JSON.stringify(body));
 			});
@@ -336,14 +343,40 @@ app.get("/repoStates/:clientId", function(req, res){
 	var timer = Timer.create("RepoStates");
 	timer.start();
 	var analysisDb = new AnalysisDb();
-	console.log("Repostates")
 	analysisDb.getRepoStates(clientId).then(function(stateList){
 		timer.stop();
 		console.log("Got states after: "+timer.getLast()+" ms");
 		res.send(stateList);
-});
+	},function(error){
+		console.log("ERROR: Could not get repoStates: "+error);
+	});
 });
 
+app.get("/markertypes/", function(req, res){
+	var timer = Timer.create("Markertypes request");
+	timer.start();
+	var analysisDb = new AnalysisDb();
+	analysisDb.getMarkerTypes().then(function(markers){
+		timer.stop();
+		console.log("Got markerTypes after: "+timer.getLast()+" ms");
+		res.send(markers);
+	},function(error){
+		console.log("ERROR: Could not get markerTypes: "+error);
+	});
+});
+
+app.get("/markertypesbycategory/", function(req, res){
+	var timer = Timer.create("Category Markertypes request");
+	timer.start();
+	var analysisDb = new AnalysisDb();
+	analysisDb.getMarkerTypesByCategory().then(function(markers){
+		timer.stop();
+		console.log("Got catmarkerTypes after: "+timer.getLast()+" ms");
+		res.send(markers);
+	},function(error){
+		console.log("ERROR: Could not get catmarkerTypes: "+error);
+	});
+});
 
 app.listen(PORT, function(){
 	console.log("LAStore server listening on port "+PORT);
