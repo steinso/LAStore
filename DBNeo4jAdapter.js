@@ -368,6 +368,7 @@ var DBNeo4jAdapter = function(){
 
 					var markerType = {
 						category: row.markerType.properties.category,
+						categoryName: row.markerType.properties.categoryName,
 						occurences: row.occurences,
 						messages: messages
 					};
@@ -411,10 +412,12 @@ var DBNeo4jAdapter = function(){
 					});
 
 					//Add info
-					var markerType = row.markertype.properties.category;
+					var markerCategory = row.markertype.properties.category;
+					var markerCategoryName = row.markertype.properties.categoryName;
 
 					category.push({
-						category: markerType,
+						category: markerCategory,
+						categoryName: markerCategoryName,
 						messages: messages,
 						occurences: row.occurences
 					});
