@@ -42,10 +42,10 @@ var DBNeo4jAdapter = function(){
 					result: test.result
 				};
 
-				var query = "MATCH (u:User {clientId:{clientId}})-[r1:HAS_REPO]-(r:Repo)-[r2:HAS_FILE]-(f:File {contentName: {contentName}, packageName: {packageName}, type:{type}})-[r3:HAS_FILE_STATE]-(fs:FileState) ";
+				var query = "MATCH (u:User {clientId:{clientId}})-[r1:HAS_REPO]->(r:Repo)-[r2:HAS_FILE]->(f:File {contentName: {contentName}, packageName: {packageName}, type:{type}})-[r3:HAS_FILE_STATE]-(fs:FileState) ";
 				query += " WHERE fs.time < {time} AND f.type = 'class' ";
 				query += " WITH fs ORDER BY fs.time DESC LIMIT 1 ";
-				query += " MERGE (fs)-[:HAS_TEST]->(t:Test {time:{time},className:{contentName},packageNa:{packageName},methodName:{methodName},result:{result} })";
+				query += " MERGE (fs)-[:HAS_TEST]->(t:Test {time:{time},className:{contentName},packageName:{packageName},methodName:{methodName},result:{result} })";
 
 				return {query: query, params: params, lean: true};
 			});
@@ -142,6 +142,12 @@ var DBNeo4jAdapter = function(){
 					packageName: file.packageName,
 					type: file.type
 				};
+
+				// Skip test files
+				if(file.contentName.substr(-4) === "Test"){
+					console.log("Skipped file: ",file.contentName,file.packageName);
+					return;
+				}
 
 				var stateParams = {
 					numberOfMarkers: file.numberOfMarkers,
