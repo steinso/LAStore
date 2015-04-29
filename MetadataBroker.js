@@ -1,7 +1,7 @@
 var DBNeo4jAdapter = require("./DBNeo4jAdapter.js");
-var db = new DBNeo4jAdapter();
 
-var MetadataBroker = function(){
+var MetadataBroker = function(dbUrl){
+	var db = new DBNeo4jAdapter(dbUrl);
 
 	function getMetadata(filepath,clientId){
 		return new Promise(function(resolve,reject){

@@ -8,6 +8,7 @@
     "start": "node LAStoreServer.js"
   },
   "dependencies": {
+    "dotenv": "^1.1.0",
     "gulp": "*",
     "gulp-babel": "*"
   },

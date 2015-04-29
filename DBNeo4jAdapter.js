@@ -11,7 +11,6 @@
 var neo4j= require("neo4j");
 var CypherMergeQuery = require("./CypherMergeQuery.js");
 var Promise = require("es6-promise").Promise;
-var db = new neo4j.GraphDatabase("http://localhost:7474");
 var Timer = require("./Timer.js");
 var _ = require("lodash");
 
@@ -19,10 +18,11 @@ var _ = require("lodash");
 /**
  *
  *
- * States without contex are meant as workspace states, or commits in a git context
+ * States without context are meant as workspace states, or commits in a git context
  */
-var DBNeo4jAdapter = function(){
+var DBNeo4jAdapter = function(url){
 
+	var db = new neo4j.GraphDatabase(url);
 	var neoTimer = Timer.create("NeoTimer");
 
 	function addStates(clientId,states){

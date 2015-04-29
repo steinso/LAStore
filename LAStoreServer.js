@@ -1,5 +1,8 @@
 "use strict";
 
+//Load environment variables from .env file
+require('dotenv').load();
+
 var express = require("express");
 var bodyParser = require("body-parser");
 var Promise = require("es6-promise");
@@ -21,8 +24,7 @@ var _ = require("lodash");
 var request = require("request");
 var Timer = require("./Timer.js");
 
-var PORT = argv.p || argv.port || "50812";
-var REPO_PATH = "/srv/LAHelper/logs/";
+var PORT = argv.p || argv.port || process.env.PORT;
 
 app.use(bodyParser.json({limit:"1mb"}));
 
@@ -147,7 +149,7 @@ app.post("/notify/repo/:clientId",function(req,res){
 	var timer = Timer.create("notify");
 	timer.start();
 
-	var analysisDb = new AnalysisDb();
+	var analysisDb = new AnalysisDb(process.env.DB_URL);
 	analysisDb.getTimeOfLastUpdate(clientId).then(function(timeOfLastUpdate){
 
 		timer.stop();
@@ -320,7 +322,7 @@ app.get("/fileMetadata", function(req, res){
 		res.send(JSON.stringify(err));
 	}
 
-	var metadataBroker = new MetadataBroker();
+	var metadataBroker = new MetadataBroker(process.env.DB_URL);
 	metadataBroker.getMetadata(params.filename,params.clientId).then(function(response){
 		res.send(response);
 	},function(error){
@@ -335,7 +337,7 @@ app.get("/repoStates/:clientId", function(req, res){
 	var clientId = req.params.clientId;
 	var timer = Timer.create("RepoStates");
 	timer.start();
-	var analysisDb = new AnalysisDb();
+	var analysisDb = new AnalysisDb(process.env.DB_URL);
 	console.log("Repostates")
 	analysisDb.getRepoStates(clientId).then(function(stateList){
 		timer.stop();
