@@ -5,6 +5,7 @@ require('dotenv').load();
 
 var express = require("express");
 var bodyParser = require("body-parser");
+var morgan = require("morgan");
 var Promise = require("es6-promise");
 var app = express();
 var MetadataBroker = require("./MetadataBroker.js");
@@ -29,6 +30,8 @@ var REPO_PATH = process.env.REPO_PATH;
 var analysisDb = new AnalysisDb(process.env.DB_URL);
 
 app.use(bodyParser.json({limit: "1mb"}));
+app.use(morgan(":date[iso] ms: :response-time status: :status :method :url  "));
+
 
 app.use(function(req, res, next){
 	try{
@@ -364,13 +367,9 @@ app.get("/fileMetadata", function(req, res){
 
 app.get("/repoStates/:clientId", function(req, res){
 	var clientId = req.params.clientId;
-	var timer = Timer.create("RepoStates");
-	timer.start();
 	analysisDb.getRepoStates(clientId).then(function(fileList){
-		timer.stop();
 		fileList = ClientStateAnalyzer.process(fileList);
 
-		console.log("Got states after: "+timer.getLast()+" ms");
 		res.send(fileList);
 	},function(error){
 		console.log("ERROR: Could not get repoStates: "+error);
@@ -378,11 +377,7 @@ app.get("/repoStates/:clientId", function(req, res){
 });
 
 app.get("/markertypes/", function(req, res){
-	var timer = Timer.create("Markertypes request");
-	timer.start();
 	analysisDb.getMarkerTypes().then(function(markers){
-		timer.stop();
-		console.log("Got markerTypes after: "+timer.getLast()+" ms");
 		res.send(markers);
 	},function(error){
 		console.log("ERROR: Could not get markerTypes: "+error);
@@ -390,11 +385,8 @@ app.get("/markertypes/", function(req, res){
 });
 
 app.get("/markertypes/category/", function(req, res){
-	var timer = Timer.create("Category Markertypes request");
-	timer.start();
+
 	analysisDb.getMarkerTypesByCategory().then(function(markers){
-		timer.stop();
-		console.log("Got catmarkerTypes after: "+timer.getLast()+" ms");
 		res.send(markers);
 	},function(error){
 		console.log("ERROR: Could not get catmarkerTypes: "+error);
@@ -411,30 +403,28 @@ app.get("/category/client", function(req, res){
 	var categoryType = req.query.type;
 	var categoryName = req.query.name;
 
-	var timer = Timer.create("Category client request");
-	timer.start();
 	analysisDb.getAllClientsInCategory(categoryName, categoryType).then(function(clients){
-		timer.stop();
 
-		Object.keys(clients).forEach(function(client){clients[client] = ClientStateAnalyzer.process(clients[client]);});
+		// Process each client
+		Object.keys(clients).forEach(function(client){
+			clients[client] = ClientStateAnalyzer.process(clients[client]);
+		});
 
-		console.log("Got clients in category after: "+timer.getLast()+" ms");
 		res.send(clients);
 	},function(error){
 		console.log("ERROR: Could not get clients in category: "+error);
+		res.status(200).send();
 	});
 });
 
+
 app.get("/category", function(req, res){
 
-	var timer = Timer.create("Category list request");
-	timer.start();
 	analysisDb.getCategoryList().then(function(categories){
-		timer.stop();
-		console.log("Got categories after: "+timer.getLast()+" ms");
 		res.send(categories);
 	},function(error){
 		console.log("ERROR: Could not get categories: "+error);
+		res.status(200).send();
 	});
 });
 
