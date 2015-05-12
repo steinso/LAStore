@@ -8,7 +8,6 @@ var bodyParser = require("body-parser");
 var Promise = require("es6-promise");
 var app = express();
 var MetadataBroker = require("./MetadataBroker.js");
-var validateRequest = require("./RequestValidator.js").validateRequest;
 var Client = require('./Client.js')();
 
 var DatabaseHandler = require('./DatabaseHandler.js');
@@ -17,19 +16,59 @@ FileOrganizer = FileOrganizer();
 var db = new DatabaseHandler('dbFile.db');
 var Log = require("./Logger.js");
 var argv = require('minimist')(process.argv.slice(2));
-var fs = require("fs");
 var GitBroker = require("./GitBroker.js");
 var AnalysisDb = require("./DBNeo4jAdapter.js");
+var ClientStateAnalyzer = require("./ClientStateAnalyzer.js");
 var _ = require("lodash");
 var request = require("request");
 var Timer = require("./Timer.js");
+var type = require("typed");
 
 var PORT = argv.p || argv.port || process.env.PORT;
+var REPO_PATH = process.env.REPO_PATH;
+var analysisDb = new AnalysisDb(process.env.DB_URL);
 
-app.use(bodyParser.json({limit:"1mb"}));
+app.use(bodyParser.json({limit: "1mb"}));
+
+app.use(function(req, res, next){
+	try{
+		var typeName = "";
+		var reqObj = {};
+		var url = req.url.split("?")[0] || req.url;
+
+		switch(req.method){
+			case "GET":
+				typeName = "/api/get" + url;
+				reqObj = req.query;
+			break;
+
+			case "POST":
+				typeName = "/api/post" + url;
+				reqObj = req.body;
+			break;
+
+			default:
+				console.log("Non-recognisable request method: ", req.method);
+				next();
+				return;
+		}
+
+		if(type.exists(typeName)){
+			type.check(typeName, reqObj);
+
+		}else{
+			console.log("REQ VALIDATION IGNORED: No type specification for /api/get" + req.url);
+		}
+
+		next();
+	}catch(e){
+		console.log("Request mismatch: ",typeName,reqObj);
+		res.status(420).send();
+	}
+});
 
 app.post("/client",function(req,res){
-	var clientId = Client.create();	
+	var clientId = Client.create();
 	var log = new Log("Create client "+clientId);
 	log.print();
 	res.send(clientId);
@@ -42,37 +81,31 @@ app.post("/client/name",function(req,res){
 
 	Client.setName(clientId,name).then(function(name){
 
-		 var reply = {'status': 'OK', 'name': name};
-		 res.send(JSON.stringify(reply));
-		 log.print();
+		var reply = {'status': 'OK', 'name': name};
+		res.send(JSON.stringify(reply));
+		log.print();
 
 	},function(error){
 
-		 var reply = {'status': 'OK', 'error': error};
-		 res.send(JSON.stringify(reply));
-		 log.print();
+		var reply = {'status': 'OK', 'error': error};
+		res.send(JSON.stringify(reply));
+		log.print();
 	})
 
 });
 
-var setClientParticipatingRequest = {
-	clientId: "",
-	participating: false 
-};
+type.add("/api/post/client/participating",{
+	clientId: "String",
+	participating: "Any"
+});
 
 app.post("/client/participating",function(req,res){
 	var params = req.body;
-
-	if(!validateRequest(params,setClientParticipatingRequest)){
-		var err = {error: "Request misformed"};
-		res.send(JSON.stringify(err));
-	}
-
 	var clientId = params.clientId;
 	var value = params.participating;
 	var log = new Log(clientId,"Participating: "+value);
 
-Client.setParticipating(clientId,value).then(function(){
+	Client.setParticipating(clientId,value).then(function(){
 		log.debug("Paricipating set to: "+value);
 		var response = {status: "OK"};
 		res.send(JSON.stringify(response));
@@ -87,7 +120,13 @@ Client.setParticipating(clientId,value).then(function(){
 
 app.get("/client/participating",function(req,res){
 
-})
+});
+/*
+type.add("/api/get/client",{
+	name: "String",
+	age: "String"
+});
+*/
 
 app.get("/client/:nickname",function(req,res){
 
@@ -100,7 +139,7 @@ app.get("/client/:nickname",function(req,res){
 		var err = {error: "Invalid name"};
 		res.send(JSON.stringify(err));
 		log.error("Invalid name");
-		log.print()
+		log.print();
 		return;
 	}
 
@@ -122,33 +161,35 @@ app.get("/client/:nickname",function(req,res){
 
 app.get("/client", function(req, res){
 
-	var path = REPO_PATH;
-	var clientList = [];
-	fs.readdir(path, function(err, files){
-
-		if(err){
-			res.send("ERROR: " + err);
-		}
-
-		if(files !== null && files.length > 0){
-			clientList = files.filter(function(file){
-				return fs.statSync(path + file).isDirectory();
-			});
-		}
-
+	analysisDb.getClientList().then(function(clientList){
 		res.send(clientList);
+	},function(error){
+		res.send("ERROR: " + error);
 	});
 });
+
+//type.add("/api/get/category/clients",{
+	//name: "String",
+	//type: "String"
+//});
+
+//app.get("/category/clients", function(req, res){
+
+	//analysisDb.getClientList().then(function(clientList){
+		//res.send(clientList);
+	//},function(error){
+		//res.send("ERROR: " + error);
+	//});
+/*});*/
 
 app.post("/notify/repo/:clientId",function(req,res){
 	var clientId = req.params.clientId;
 	//Diff list of commits in GIT to lists of commits in DB
-	console.log("Notification received for:"+clientId)
+	console.log("Notification received for:"+clientId);
 	var repoPath = REPO_PATH+clientId;
 	var timer = Timer.create("notify");
 	timer.start();
 
-	var analysisDb = new AnalysisDb(process.env.DB_URL);
 	analysisDb.getTimeOfLastUpdate(clientId).then(function(timeOfLastUpdate){
 
 		timer.stop();
@@ -162,7 +203,7 @@ app.post("/notify/repo/:clientId",function(req,res){
 
 			//Filter on times
 			if(relevantCommits.length<1){
-				var response = {status:"OK"}
+				var response = {status: "OK"};
 				console.log("Total time spent: ", timer.getTotal());
 				res.send(JSON.stringify(response));
 				return;
@@ -224,44 +265,31 @@ app.post("/notify/repo/:clientId",function(req,res){
 });
 
 
-var setErrorLogRequest= {
-	clientId: "",
-	log: ""
-};
+type.add("/api/post/errorLog",{
+	clientId: "String",
+	log: "String"
+});
 
 app.post("/errorLog",function(req,res){
 	var params = req.body;
-	if(!validateRequest(params,setErrorLogRequest)){
-		var err = {error: "Request misformed"};
-		res.send(JSON.stringify(err));
-	}
 
 	db.insertApplicationLog(params.clientId,"error",params.log);
 	var response = {status:"OK"};
 	res.send(JSON.stringify(response));
 });
 
-var setEventLogRequest= {
-	clientId: "",
-	log: ""
-};
+type.add("/api/post/eventLog", {
+	clientId: "String",
+	log: "String"
+});
 
 app.post("/eventLog",function(req,res){
 	var params = req.body;
-	if(!validateRequest(params,setErrorLogRequest)){
-		var err = {error: "Request misformed"};
-		res.send(JSON.stringify(err));
-	}
 
 	db.insertApplicationLog(params.clientId,"log",params.log);
 	var response = {status:"OK"};
 	res.send(JSON.stringify(response));
 });
-
-var setFile = {
-	clientId: "",
-	files: []
-};
 
 var notifyQueue = [];
 function runNotifyQueue(){
@@ -270,14 +298,16 @@ function runNotifyQueue(){
 
 };
 
+type.add("/api/post/file", {
+	clientId: "String",
+	files: "Array<Any>"
+});
+
 app.post("/file", function(req, res){
 
 	var log = new Log(clientId,"File request");
 	var params = req.body;
-	if(!validateRequest(params,setFile)){
-		var err = {error: "Request misformed"};
-		res.send(JSON.stringify(err));
-	}
+
 	var clientId = params.clientId;
 	var files= params.files;
 
@@ -316,19 +346,13 @@ function createFileRepresentation(file){
 	return out;
 }
 
-var MetaDataRequest = {
-	filename: "",
-	clientId: ""
-};
+type.add("/api/post/fileMetadata", {
+	filename: "String",
+	clientId: "String"
+});
 
 app.get("/fileMetadata", function(req, res){
 	var params = req.body;
-
-	if(!validateRequest(params,MetaDataRequest)){
-		var err = {error: "Request misformed"};
-		res.send(JSON.stringify(err));
-	}
-
 	var metadataBroker = new MetadataBroker(process.env.DB_URL);
 	metadataBroker.getMetadata(params.filename,params.clientId).then(function(response){
 		res.send(response);
@@ -336,19 +360,18 @@ app.get("/fileMetadata", function(req, res){
 		var err = {error: error};
 		res.send(JSON.stringify(err));
 	});
-
-
 });
 
 app.get("/repoStates/:clientId", function(req, res){
 	var clientId = req.params.clientId;
 	var timer = Timer.create("RepoStates");
 	timer.start();
-	var analysisDb = new AnalysisDb(process.env.DB_URL);
-	analysisDb.getRepoStates(clientId).then(function(stateList){
+	analysisDb.getRepoStates(clientId).then(function(fileList){
 		timer.stop();
+		fileList = ClientStateAnalyzer.process(fileList);
+
 		console.log("Got states after: "+timer.getLast()+" ms");
-		res.send(stateList);
+		res.send(fileList);
 	},function(error){
 		console.log("ERROR: Could not get repoStates: "+error);
 	});
@@ -357,7 +380,6 @@ app.get("/repoStates/:clientId", function(req, res){
 app.get("/markertypes/", function(req, res){
 	var timer = Timer.create("Markertypes request");
 	timer.start();
-	var analysisDb = new AnalysisDb();
 	analysisDb.getMarkerTypes().then(function(markers){
 		timer.stop();
 		console.log("Got markerTypes after: "+timer.getLast()+" ms");
@@ -367,16 +389,52 @@ app.get("/markertypes/", function(req, res){
 	});
 });
 
-app.get("/markertypesbycategory/", function(req, res){
+app.get("/markertypes/category/", function(req, res){
 	var timer = Timer.create("Category Markertypes request");
 	timer.start();
-	var analysisDb = new AnalysisDb();
 	analysisDb.getMarkerTypesByCategory().then(function(markers){
 		timer.stop();
 		console.log("Got catmarkerTypes after: "+timer.getLast()+" ms");
 		res.send(markers);
 	},function(error){
 		console.log("ERROR: Could not get catmarkerTypes: "+error);
+	});
+});
+
+
+type.add("/api/get/category/client", {
+	name: "String",
+	type: "String"
+});
+
+app.get("/category/client", function(req, res){
+	var categoryType = req.query.type;
+	var categoryName = req.query.name;
+
+	var timer = Timer.create("Category client request");
+	timer.start();
+	analysisDb.getAllClientsInCategory(categoryName, categoryType).then(function(clients){
+		timer.stop();
+
+		Object.keys(clients).forEach(function(client){clients[client] = ClientStateAnalyzer.process(clients[client]);});
+
+		console.log("Got clients in category after: "+timer.getLast()+" ms");
+		res.send(clients);
+	},function(error){
+		console.log("ERROR: Could not get clients in category: "+error);
+	});
+});
+
+app.get("/category", function(req, res){
+
+	var timer = Timer.create("Category list request");
+	timer.start();
+	analysisDb.getCategoryList().then(function(categories){
+		timer.stop();
+		console.log("Got categories after: "+timer.getLast()+" ms");
+		res.send(categories);
+	},function(error){
+		console.log("ERROR: Could not get categories: "+error);
 	});
 });
 
