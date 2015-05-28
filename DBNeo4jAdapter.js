@@ -3,10 +3,9 @@
  *
  *  DB "Schema"
  *  User -> Repo -> File -> FileStates -> Marker
- *  FileState -> Category
- *  Repo -> RepoState -> FileState
+ *  File -> Category
+ *  FileState -> Test
  *
- * Marker: {Type:"error",}
  */
 var neo4j= require("neo4j");
 var CypherMergeQuery = require("./CypherMergeQuery.js");
@@ -212,7 +211,7 @@ var DBNeo4jAdapter = function(url){
 		keys.forEach(function(param){
 			collection[id+param] = params[param];
 			queryParams.push(param+":{"+id+param+"}");
-		})
+		});
 
 		return queryParams.join(", ");
 
@@ -223,7 +222,7 @@ var DBNeo4jAdapter = function(url){
 
 
 			var query = "MATCH (u:User {clientId:{clientId}}) -[:HAS_REPO]-> (r:Repo) RETURN u,r";
-			db.cypher({query: query, params:{clientId:clientId}},function(error,result){
+			db.cypher({query: query, params: {clientId: clientId}},function(error,result){
 
 				if(error !== null){
 					reject(error);
@@ -233,29 +232,29 @@ var DBNeo4jAdapter = function(url){
 				if(result.length<1){
 					_createUser(clientId).then(function(){
 						resolve();
-					},function(error){reject(error)});
+					},function(error){reject(error);});
 				}else{
 					resolve();
 					console.log("User exists");
 				}
-			})
-		})
+			});
+		});
 	}
 
 	function _createUser(clientId){
 		return new Promise(function(resolve, reject){
 			var query = "CREATE (u:User {clientId:{clientId}}) CREATE (r:Repo {timeOfLastUpdate:{timeOfLastUpdate}}) CREATE (u)-[:HAS_REPO]->(r)";
-			var params = {clientId:clientId,timeOfLastUpdate:0};
+			var params = {clientId: clientId, timeOfLastUpdate: 0};
 
-			db.cypher({query: query, params:params},function(error,result){
+			db.cypher({query: query, params: params}, function(error, result){
 
 				if(error !== null){
 					reject(error);
 					return;
 				}
 				resolve();
-			})
-		})
+			});
+		});
 
 	}
 
@@ -302,7 +301,15 @@ var DBNeo4jAdapter = function(url){
 	function getAllClientsInCategory(name, type){
 		return new Promise(function(resolve,reject){
 			//When we specify collections like this, we get them exactly like specified, so no need to extract properties other than the actual objects
-			var query = "Match (c:Category {name: {name}, type:{type}})--(f:File)--(r:Repo)--(u:User) MATCH (f)--(fs:FileState)  Optional match (fs)--(t:Test) OPTIONAL MATCH (fs)--(m:Marker) WITH c,u,f,fs, {time: fs.time, numberOfLines: fs.numberOfLines, markers: collect(m), tests:collect(t)} as state ORDER BY fs.time  WITH c,u,f,collect(state) as states WITH u,{name: f.name, contentName: f.contentName, packageName:f.packageName, type: f.type, states: states} as file return u as user, collect(file) as files";
+			var query;
+			query = "MATCH (c:Category {name: {name}, type:{type}})--(f:File)--(r:Repo)--(u:User)";
+			query += " MATCH (f)--(fs:FileState)";
+			query += " OPTIONAL MATCH (fs)--(t:Test)";
+			query += " OPTIONAL MATCH (fs)--(m:Marker)";
+			query += " WITH c,u,f,fs, {time: fs.time, numberOfLines: fs.numberOfLines, markers: collect(m), tests:collect(t)} as state ORDER BY fs.time ";
+			query += " WITH c,u,f,collect(state) as states,{name: c.name, type: c.type} as category";
+			query += " WITH u,{name: f.name, contentName: f.contentName, packageName:f.packageName, type: f.type, states: states, category: category} as file";
+			query += " return {clientId: u.clientId, files: collect(file)} as user";
 
 			var params = {name: name, type: type};
 
@@ -310,13 +317,20 @@ var DBNeo4jAdapter = function(url){
 				if(error !== null){
 					reject(error);
 				}else{
-					var usersInCategoryMap = {};
+					var userList = [];
 
 					result.forEach(function(row){
-						usersInCategoryMap[row.user.properties.clientId] = _extractUserMarkerAndTestProperties(row.files);
+						var user = row.user;
+						user.files = _extractUserMarkerAndTestProperties(user.files);
+						userList.push(user);
 					});
 
-					resolve(usersInCategoryMap);
+					// Remove all users that only has files with less than 3 states
+					userList = userList.filter(function(user){
+						return user.files.some(function(file){return file.states.length > 2;});
+					});
+
+					resolve(userList);
 				}
 			});
 			});
@@ -476,41 +490,35 @@ var DBNeo4jAdapter = function(url){
 		})
 	}
 
-	/*function getRepoStates(clientId){*/
-		//return new Promise(function(resolve, reject){
-
-			//var params = {clientId: clientId};
-			//var query = "Match (u:User {clientId:{clientId}})-[:HAS_REPO]->(r:Repo)-[:HAS_FILE]-> (file:File) -[:HAS_FILE_STATE]->(fileState:FileState) OPTIONAL MATCH (file) -[:IS_IN_CATEGORY]-(category:Category) OPTIONAL MATCH (fileState)-[:HAS_TEST]->(test:Test) return file,category,collect(fileState) as fileStates,collect(test) as tests";
-
-			//db.cypher({query: query, params: params},function(error,result){
-				//if(error !== null){
-					//reject(error);
-					//return;
-				//}
-
-				//_convertRepoStates(result).then(function(result){
-					//resolve(result);
-				//},function(error){reject(error);});
-
-			//});
-		//});
-	/*}*/
-
+	// Get a client
 	function getRepoStates(clientId){
 		return new Promise(function(resolve, reject){
 
 			var params = {clientId: clientId};
-			var query = "Match (u:User {clientId:{clientId}})-[:HAS_REPO]->(r:Repo)-[:HAS_FILE]-> (f:File) -[:HAS_FILE_STATE]->(fs:FileState) OPTIONAL MATCH (f) -[:IS_IN_CATEGORY]-(c:Category) OPTIONAL MATCH (fs)-[:HAS_TEST]->(t:Test) OPTIONAL MATCH (fs) --(m:Marker) WITH u,f,c, {time: fs.time, numberOfLines: fs.numberOfLines, markers: collect(m), tests:collect(t)} as state ORDER BY fs.time WITH c,u,f, collect(state) as states, {name: c.name, type: c.type} as category WITH u,{name: f.name, contentName: f.contentName, packageName:f.packageName, type: f.type, category: category, states: states} as file return u as user, collect(file) as files";
+			var query;
+			query = "MATCH (u:User {clientId:{clientId}})-[:HAS_REPO]->(r:Repo)-[:HAS_FILE]-> (f:File) -[:HAS_FILE_STATE]->(fs:FileState)";
+			query += " OPTIONAL MATCH (f) -[:IS_IN_CATEGORY]-(c:Category)";
+			query += " OPTIONAL MATCH (fs)-[:HAS_TEST]->(t:Test)";
+			query += " OPTIONAL MATCH (fs) --(m:Marker)";
+			query += " WITH u,f,c, {time: fs.time, numberOfLines: fs.numberOfLines, markers: collect(m), tests:collect(t)} as state ORDER BY fs.time";
+			query += " WITH c,u,f, collect(state) as states, {name: c.name, type: c.type} as category";
+			query += " WITH u,{name: f.name, contentName: f.contentName, packageName:f.packageName, type: f.type, category: category, states: states} as file";
+			query += " return {clientId: u.clientId, files: collect(file)} as user";
 
-			//var query = "Match (c:Category {name: {name}, type:{type}})--(f:File)--(r:Repo)--(u:User) MATCH (f)--(fs:FileState)  Optional match (fs)--(t:Test) OPTIONAL MATCH (fs)--(m:Marker) WITH c,u,f,fs, {time: fs.time, numberOfLines: fs.numberOfLines, markers: collect(m), tests:collect(t)} as state ORDER BY fs.time  WITH c,u,f,collect(state) as states WITH u,{name: f.name, contentName: f.contentName, packageName:f.packageName, type: f.type, states: states} as file return u as user, collect(file) as files";
 			db.cypher({query: query, params: params},function(error,result){
 				if(error !== null){
 					reject(error);
 					return;
 				}
+				if(result[0] === undefined){
+					reject("Client not found");
+					return;
+				}
 
-				var clientFiles = _extractUserMarkerAndTestProperties(result[0].files);
-					resolve(clientFiles);
+				var user = result[0].user;
+
+				user.files = _extractUserMarkerAndTestProperties(user.files);
+				resolve(user);
 
 			});
 		});

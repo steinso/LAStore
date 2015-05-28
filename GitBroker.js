@@ -147,6 +147,121 @@ var getFileListFromGitRepo = function(dir){
 	});
 };
 
+
+
+			//eventEmitter.on('end', function(commits) {
+				//var promises = commits.map(function(commit){
+					//return commit.getTree();
+				//});
+
+				//Promise.all(promises).then(function(trees){
+
+				//var prevTree = null;
+				//trees.forEach(function(tree,index){
+					//NodeGit.Diff.treeToTree(repo,prevTree,tree,options).then(function(result){
+						//if(result.numDeltas()>0){
+							//var commit = commits[index+1];
+							//commit.getEntry(filePath).then(function(entry){
+								//entry.getBlob().then(function(blob){
+									//var length = String(blob).split("\n").length;
+								//console.dir(length);
+								//console.log(commits[index+1].sha());
+								//console.log(index);
+						//})
+						//})
+					//}
+					//});
+					//prevTree = tree;
+				//});
+				//})
+
+
+/*
+ * Returns commitObjs with fileContents for 
+ * all commits that changed a given file
+ */
+var getFile = function(repoPath, filePath){
+	return new Promise(function(resolve, reject){
+		var repo;
+		NodeGit.Repository.open(repoPath)
+		// Open the master branch.
+		.then(function(_repo) {
+			repo = _repo;
+			return repo.getMasterCommit();
+		})
+		// Display information about commits on master.
+		.then(function(firstCommitOnMaster) {
+			var options = {
+				pathspec: [filePath]
+			};
+
+			var eventEmitter = firstCommitOnMaster.history();
+
+			eventEmitter.on('end', function(commits) {
+				var commitTreePromises = commits.map(function(commit){
+					return commit.getTree();
+				});
+
+				Promise.all(commitTreePromises).then(function(trees){
+
+					var commitPromises = trees.map(function(tree,index){
+						return new Promise(function(resolve, reject){
+
+							var prevTree = trees[index-1] || null;
+							NodeGit.Diff.treeToTree(repo,prevTree,tree,options).then(function(result){
+								if(result.numDeltas()>0){
+									var commit = commits[index-1]; //previous commit is the one which is changed
+									if(commit === undefined){
+										resolve(false);
+										return;
+									}
+
+									generateCommitObject(commit).then(function(commitObj){
+										resolve(commitObj);
+									},function(error){
+										console.error(error);
+										resolve(false);
+									});
+								}else{
+									resolve(false);
+								}
+							},function(error){
+								console.error(error);
+								resolve(false);
+							});
+						});
+					});
+					return commitPromises;
+
+				}).then(function(commitPromises){
+					Promise.all(commitPromises).then(function(commitObjs){
+						commitObjs = commitObjs.filter(function(obj){
+							var valid = true;
+							if(obj === false){return false;}
+							if(obj.files.length<1){return false;}
+
+							//Filter all other files that are included in the commit
+							obj.files = obj.files.filter(function(fileObj){
+								return fileObj.name === filePath;
+							});
+							if(obj.files.length<1){return false;}
+
+							return valid;
+						});
+						resolve(commitObjs);
+					},function(error){
+						reject(error);
+					});
+				});
+			});
+
+			eventEmitter.start();
+		}).catch(function(error){
+			reject(error);
+		});
+	});
+};
+
 var getFileCommits = function(repoPath,files,_requestedCommits){
 	return new Promise(function(resolve,reject){
 
@@ -360,5 +475,6 @@ var generateCommitObjectOld = function(_commit, filesInRepo){
 module.exports = {
 	getCommitsFromRepo: getCommitsFromRepo,
 	getCommitsAfterTime: getCommitsAfterTime,
+	getFile: getFile,
 	getCommitListFromRepo: getCommitListFromRepo
 };

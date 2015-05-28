@@ -367,10 +367,11 @@ app.get("/fileMetadata", function(req, res){
 
 app.get("/repoStates/:clientId", function(req, res){
 	var clientId = req.params.clientId;
-	analysisDb.getRepoStates(clientId).then(function(fileList){
-		fileList = ClientStateAnalyzer.process(fileList);
+	analysisDb.getRepoStates(clientId).then(function(client){
+		client = ClientStateAnalyzer.process(client);
 
-		res.send(fileList);
+		res.send(client);
+
 	},function(error){
 		console.log("ERROR: Could not get repoStates: "+error);
 	});
@@ -403,14 +404,14 @@ app.get("/category/client", function(req, res){
 	var categoryType = req.query.type;
 	var categoryName = req.query.name;
 
-	analysisDb.getAllClientsInCategory(categoryName, categoryType).then(function(clients){
+	analysisDb.getAllClientsInCategory(categoryName, categoryType).then(function(clientList){
 
 		// Process each client
-		Object.keys(clients).forEach(function(client){
-			clients[client] = ClientStateAnalyzer.process(clients[client]);
+		clientList.map(function(client){
+			return ClientStateAnalyzer.process(client);
 		});
 
-		res.send(clients);
+		res.send(clientList);
 	},function(error){
 		console.log("ERROR: Could not get clients in category: "+error);
 		res.status(200).send();
@@ -425,6 +426,44 @@ app.get("/category", function(req, res){
 	},function(error){
 		console.log("ERROR: Could not get categories: "+error);
 		res.status(200).send();
+	});
+});
+
+type.add("/api/get/file",{
+	clientId: "String",
+	path: "String"
+});
+
+app.get("/file", function(req, res){
+	GitBroker.getFile(REPO_PATH+req.query.clientId, req.query.path).then(function(commits){
+
+		if(commits.length<1){ res.send({error:"No commits in file"});return; }
+
+		var fileStates = commits.map(function(commit){
+			return {
+				sha: commit.sha,
+				msg: commit.msg,
+				time: commit.time,
+				//fileDiff: commit.fileDiff,
+				fileContents: commit.files[0].fileContents
+			};
+		});
+
+		fileStates = _.sortBy(fileStates, 'time');
+		var lastContents = fileStates[fileStates.length-1].fileContents;
+		var classMatch = lastContents.match(/\s*public (?:class|interface) (\w+)/);
+		var contentName = classMatch[1] || "Unkown";
+
+		var file = {
+			path: req.query.path,
+			contentName: contentName,
+			clientId: req.query.clientId,
+			states: fileStates
+		};
+
+		res.send(file);
+	}).catch(function(error){
+		res.status(502).send({status:"error",msg:"Could not get file;"})
 	});
 });
 

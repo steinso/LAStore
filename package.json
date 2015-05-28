@@ -12,6 +12,7 @@
     "gulp": "*",
     "gulp-babel": "*",
     "morgan": "^1.5.3",
+    "nodegit": "^0.4.0",
     "typed": "git+http://gitlab.steinsorhus.com/steinso/typedjs.git"
   },
   "devDependencies": {
@@ -23,7 +24,6 @@
     "minimist": "^1.1.0",
     "mocha": "*",
     "neo4j": "^2.0.0-alpha5",
-    "nodegit": "^0.3.3",
     "request": "^2.53.0",
     "require": "^2.4.17",
     "rimraf": "^2.3.1",
