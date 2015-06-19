@@ -1,7 +1,7 @@
 "use strict";
 
 //Load environment variables from .env file
-require('dotenv').load();
+require("dotenv").load();
 
 var express = require("express");
 var bodyParser = require("body-parser");
@@ -9,14 +9,14 @@ var morgan = require("morgan");
 var Promise = require("es6-promise");
 var app = express();
 var MetadataBroker = require("./MetadataBroker.js");
-var Client = require('./Client.js')();
+var Client = require("./Client.js")();
 
-var DatabaseHandler = require('./DatabaseHandler.js');
-var FileOrganizer= require('./FileOrganizer.js');
+var DatabaseHandler = require("./DatabaseHandler.js");
+var FileOrganizer= require("./FileOrganizer.js");
 FileOrganizer = FileOrganizer();
-var db = new DatabaseHandler('dbFile.db');
+var db = new DatabaseHandler("dbFile.db");
 var Log = require("./Logger.js");
-var argv = require('minimist')(process.argv.slice(2));
+var argv = require("minimist")(process.argv.slice(2));
 var GitBroker = require("./GitBroker.js");
 var AnalysisDb = require("./DBNeo4jAdapter.js");
 var ClientStateAnalyzer = require("./ClientStateAnalyzer.js");
@@ -32,6 +32,15 @@ var analysisDb = new AnalysisDb(process.env.DB_URL);
 app.use(bodyParser.json({limit: "1mb"}));
 app.use(morgan(":date[iso] ms: :response-time status: :status :method :url  "));
 
+
+/*
+ *
+ * Middle-ware that ensures correct request data structures
+ * Checks each request for a type defined useing the typed.js library
+ * Examples can be seen further down.
+ * The check is only performed if a type is defined for the given endpoint
+ *
+ */
 
 app.use(function(req, res, next){
 	try{
@@ -77,22 +86,24 @@ app.post("/client",function(req,res){
 	res.send(clientId);
 });
 
+type.add("/api/post/client/name",{
+	clientId: "String",
+	name: "String"
+});
+
 app.post("/client/name",function(req,res){
 	var name = req.body.name;
 	var clientId = req.body.clientId;
-	var log = new Log(clientId,"SetName request: "+name);
 
 	Client.setName(clientId,name).then(function(name){
 
-		var reply = {'status': 'OK', 'name': name};
+		var reply = {"status": "OK", "name": name};
 		res.send(JSON.stringify(reply));
-		log.print();
 
 	},function(error){
 
-		var reply = {'status': 'OK', 'error': error};
+		var reply = {"status": "OK", "error": error};
 		res.send(JSON.stringify(reply));
-		log.print();
 	})
 
 });
@@ -103,87 +114,68 @@ type.add("/api/post/client/participating",{
 });
 
 app.post("/client/participating",function(req,res){
-	var params = req.body;
-	var clientId = params.clientId;
-	var value = params.participating;
-	var log = new Log(clientId,"Participating: "+value);
+	var clientId = req.body.clientId;
+	var value = req.body.participating;
 
 	Client.setParticipating(clientId,value).then(function(){
-		log.debug("Paricipating set to: "+value);
 		var response = {status: "OK"};
 		res.send(JSON.stringify(response));
-		log.print();
+
 	},function(error){
-		var response = {status: "OK",error:error};
-		log.error("Participating not set: "+error);
+		var response = {status: "OK",error: error};
 		res.send(JSON.stringify(response));
-		log.print();
 	});
 });
 
-app.get("/client/participating",function(req,res){
+app.get("/client/participating",function(req, res){
 
 });
-/*
-type.add("/api/get/client",{
-	name: "String",
-	age: "String"
-});
-*/
 
+/**
+ * Returns the clientId given the client nickname 
+ *
+ * @return clientId
+ */
 app.get("/client/:nickname",function(req,res){
 
 	var nickname = req.params.nickname;
-	var log = new Log("Unknown","Getting id for nick: "+nickname);
 	var allowedNamePattern = /^[A-z0-9_]+$/;
 	var validName = (nickname.match(allowedNamePattern) !== null && nickname.match(allowedNamePattern).length > 0);
+	var err;
 
 	if(!validName){
-		var err = {error: "Invalid name"};
+		err = {error: "Invalid name"};
 		res.send(JSON.stringify(err));
-		log.error("Invalid name");
-		log.print();
 		return;
 	}
 
 	db.getIdFromClientName(nickname).then(function(clientId){
 		var response = {id: clientId};
 		res.send(JSON.stringify(response));
-		log.debug("Id found: "+clientId);
-		log.print()
 
 	},function(error){
-		var err = {error: error};
+		err = {error: error};
 		res.send(JSON.stringify(err));
-		log.error(error);
-		log.print()
 	});
 });
 
 
 
-app.get("/client", function(req, res){
 
+/**
+ * Returns a list of clients in the DB
+ *
+ * @return [clientId]
+ */
+app.get("/client", function(req, res){
 	analysisDb.getClientList().then(function(clientList){
 		res.send(clientList);
 	},function(error){
-		res.send("ERROR: " + error);
+		var err = {error: error};
+		res.send(JSON.stringify(err));
 	});
 });
 
-//type.add("/api/get/category/clients",{
-	//name: "String",
-	//type: "String"
-//});
-
-//app.get("/category/clients", function(req, res){
-
-	//analysisDb.getClientList().then(function(clientList){
-		//res.send(clientList);
-	//},function(error){
-		//res.send("ERROR: " + error);
-	//});
-/*});*/
 
 app.post("/notify/repo/:clientId",function(req,res){
 	var clientId = req.params.clientId;
@@ -268,18 +260,32 @@ app.post("/notify/repo/:clientId",function(req,res){
 });
 
 
+/**
+ * Stores error logs from clients
+ *
+ * @return response
+ */
+
 type.add("/api/post/errorLog",{
 	clientId: "String",
 	log: "String"
 });
 
 app.post("/errorLog",function(req,res){
-	var params = req.body;
+	var clientId = req.body.clientId;
+	var log = req.body.log;
 
-	db.insertApplicationLog(params.clientId,"error",params.log);
-	var response = {status:"OK"};
+	db.insertApplicationLog(clientId, "error", log);
+	var response = {status: "OK"};
 	res.send(JSON.stringify(response));
 });
+
+
+/**
+ * Stores event logs from clients
+ *
+ * @return response
+ */
 
 type.add("/api/post/eventLog", {
 	clientId: "String",
@@ -287,32 +293,33 @@ type.add("/api/post/eventLog", {
 });
 
 app.post("/eventLog",function(req,res){
-	var params = req.body;
+	var clientId = req.body.clientId;
+	var log = req.body.log;
 
-	db.insertApplicationLog(params.clientId,"log",params.log);
-	var response = {status:"OK"};
+	db.insertApplicationLog(clientId, "log", log);
+	var response = {status: "OK"};
 	res.send(JSON.stringify(response));
 });
 
-var notifyQueue = [];
-function runNotifyQueue(){
 
-
-
-};
+/**
+ * Accepts a list of files for storing/ logging
+ *
+ * @return response
+ */
 
 type.add("/api/post/file", {
 	clientId: "String",
 	files: "Array<Any>"
 });
 
+var notifyQueue = [];
 app.post("/file", function(req, res){
 
 	var log = new Log(clientId,"File request");
-	var params = req.body;
 
-	var clientId = params.clientId;
-	var files= params.files;
+	var clientId = req.body.clientId;
+	var files = req.body.files;
 
 	files.map(function(file){
 		log.debug(createFileRepresentation(file));
@@ -342,28 +349,39 @@ function createFileRepresentation(file){
 	out += " ,type: "+file.type;
 	out += " ,typeOfChange: "+file.typeOfChange;
 	if(file.fileContents !== undefined){
-		out += "   ,fileContents: "+file.fileContents.substring(0,50).replace(/\n/g, " ")+'..';
+		out += "   ,fileContents: "+file.fileContents.substring(0,50).replace(/\n/g, " ")+"..";
 	}
 	out += "   }";
 
 	return out;
 }
 
-type.add("/api/post/fileMetadata", {
+type.add("/api/get/fileMetadata", {
 	filename: "String",
 	clientId: "String"
 });
 
 app.get("/fileMetadata", function(req, res){
-	var params = req.body;
+	var clientId = req.params.clientId;
+	var fileName = req.params.files;
 	var metadataBroker = new MetadataBroker(process.env.DB_URL);
-	metadataBroker.getMetadata(params.filename,params.clientId).then(function(response){
+
+	metadataBroker.getMetadata(fileName, clientId).then(function(response){
 		res.send(response);
+
 	},function(error){
 		var err = {error: error};
 		res.send(JSON.stringify(err));
+
 	});
 });
+
+
+/**
+ * Retuns a client with file states
+ *
+ * @return Client
+ */
 
 app.get("/repoStates/:clientId", function(req, res){
 	var clientId = req.params.clientId;
@@ -377,6 +395,12 @@ app.get("/repoStates/:clientId", function(req, res){
 	});
 });
 
+
+/**
+ * Returns marker types
+ *
+ * @return [MarkerType]
+ */
 app.get("/markertypes/", function(req, res){
 	analysisDb.getMarkerTypes().then(function(markers){
 		res.send(markers);
@@ -384,6 +408,12 @@ app.get("/markertypes/", function(req, res){
 		console.log("ERROR: Could not get markerTypes: "+error);
 	});
 });
+
+/**
+ * Returns marker types sorted by categories
+ *
+ * @return {categoryName: [MarkerType]}
+ */
 
 app.get("/markertypes/category/", function(req, res){
 
@@ -393,6 +423,12 @@ app.get("/markertypes/category/", function(req, res){
 		console.log("ERROR: Could not get catmarkerTypes: "+error);
 	});
 });
+
+/**
+ * Returns list of clients in a given category
+ *
+ * @return [Client]
+ */
 
 
 type.add("/api/get/category/client", {
@@ -419,6 +455,12 @@ app.get("/category/client", function(req, res){
 });
 
 
+
+/**
+ * Returns a category
+ *
+ * @return Category
+ */
 app.get("/category", function(req, res){
 
 	analysisDb.getCategoryList().then(function(categories){
@@ -428,6 +470,12 @@ app.get("/category", function(req, res){
 		res.status(200).send();
 	});
 });
+
+/**
+ * Returns a File, given clientID and path 
+ *
+ * @return File
+ */
 
 type.add("/api/get/file",{
 	clientId: "String",
@@ -444,12 +492,13 @@ app.get("/file", function(req, res){
 				sha: commit.sha,
 				msg: commit.msg,
 				time: commit.time,
-				//fileDiff: commit.fileDiff,
 				fileContents: commit.files[0].fileContents
 			};
 		});
 
-		fileStates = _.sortBy(fileStates, 'time');
+		fileStates = _.sortBy(fileStates, "time");
+
+		// Establish the contentName of the file
 		var lastContents = fileStates[fileStates.length-1].fileContents;
 		var classMatch = lastContents.match(/\s*public (?:class|interface) (\w+)/);
 		var contentName = classMatch[1] || "Unkown";
@@ -463,7 +512,7 @@ app.get("/file", function(req, res){
 
 		res.send(file);
 	}).catch(function(error){
-		res.status(502).send({status:"error",msg:"Could not get file;"})
+		res.status(502).send({status: "error", msg: "Could not get file;"});
 	});
 });
 
